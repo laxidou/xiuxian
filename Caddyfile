@@ -1,0 +1,17 @@
+http://localhost, https://localhost {
+    encode zstd gzip
+
+    handle /api/* {
+        reverse_proxy game-server:8080 {
+            flush_interval -1
+        }
+    }
+
+    handle /mcp {
+        reverse_proxy mcp-gateway:8090
+    }
+
+    handle {
+        reverse_proxy web:80
+    }
+}

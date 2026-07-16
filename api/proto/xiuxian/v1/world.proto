@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package xiuxian.v1;
+
+option go_package = "xiuxian/gen/go/xiuxian/v1;xiuxianv1";
+
+service WorldService {
+  rpc GetState(GetStateRequest) returns (RoleState);
+  rpc GetWorldBounds(GetWorldBoundsRequest) returns (WorldBounds);
+  rpc Scan(ScanRequest) returns (ScanResponse);
+  rpc Move(MoveRequest) returns (RoleState);
+  rpc Stop(StopRequest) returns (RoleState);
+  rpc TransferCultivation(TransferCultivationRequest) returns (RoleState);
+  rpc SeizeCultivation(SeizeCultivationRequest) returns (RoleState);
+  rpc Reincarnate(ReincarnateRequest) returns (RoleState);
+  rpc ListRecentEvents(ListRecentEventsRequest) returns (ListRecentEventsResponse);
+}
+
+message GetStateRequest {}
+message GetWorldBoundsRequest {}
+message ScanRequest {}
+
+message Position {
+  sint64 x_milliunits = 1;
+  sint64 y_milliunits = 2;
+}
+
+message RoleState {
+  string id = 1;
+  string name = 2;
+  int64 life_number = 3;
+  string status = 4;
+  int64 cultivation_millis = 5;
+  int32 realm_level = 6;
+  string realm_name = 7;
+  int64 age_millis = 8;
+  int64 lifespan_millis = 9;
+  int64 speed = 10;
+  int64 sense_radius = 11;
+  Position position = 12;
+  string movement_state = 13;
+  int64 state_version = 14;
+}
+
+message WorldBounds {
+  sint64 min_x_milliunits = 1;
+  sint64 max_x_milliunits = 2;
+  sint64 min_y_milliunits = 3;
+  sint64 max_y_milliunits = 4;
+}
+
+message ScanRole {
+  string id = 1;
+  string name = 2;
+  string realm = 3;
+  string status = 4;
+  double distance = 5;
+  optional Position position = 6;
+}
+
+message OpportunitySignal {
+  string message = 1;
+  double distance = 2;
+}
+
+message ScanResponse {
+  repeated ScanRole roles = 1;
+  repeated OpportunitySignal opportunities = 2;
+  bool has_more = 3;
+}
+
+message MoveRequest {
+  string idempotency_key = 1;
+  Position target = 2;
+}
+
+message StopRequest { string idempotency_key = 1; }
+
+message TransferCultivationRequest {
+  string idempotency_key = 1;
+  string target_id = 2;
+  int64 amount_minutes = 3;
+}
+
+message SeizeCultivationRequest {
+  string idempotency_key = 1;
+  string target_id = 2;
+}
+
+message ReincarnateRequest {
+  string idempotency_key = 1;
+  optional Position position = 2;
+  bool random = 3;
+}
+
+message ListRecentEventsRequest {
+  int64 after = 1;
+  int32 limit = 2;
+}
+
+message WorldEvent {
+  int64 id = 1;
+  string type = 2;
+  string message = 3;
+  int64 created_at_unix_millis = 4;
+  int64 life_number = 5;
+  string data_json = 6;
+}
+
+message ListRecentEventsResponse { repeated WorldEvent events = 1; }

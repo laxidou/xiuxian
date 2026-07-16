@@ -1,0 +1,9 @@
+.git
+.agents
+.claude
+.issues
+.prototypes
+.scratch
+.wayfinder
+web/node_modules
+web/dist
