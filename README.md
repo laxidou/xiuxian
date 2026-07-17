@@ -53,7 +53,20 @@ npm run typecheck
 npm run build
 ```
 
+完整验收（Go、Web、契约可复现、Compose 与故障恢复冒烟）：
+
+```bash
+scripts/check.sh
+```
+
 Protobuf 契约位于 `api/proto/xiuxian/v1/world.proto`，Buf 配置位于仓库根目录。规则引擎使用毫秒修为单位（自然经过 1 毫秒即增加 1 内部修为单位，60,000 单位为 1 点修为）；坐标使用千分之一世界单位，避免夺功和机缘发现依赖浮点相等。
+
+生成 Go/gRPC、OpenAPI 和 TypeScript 契约：
+
+```bash
+scripts/generate-contracts.sh
+git diff --exit-code
+```
 
 ## MCP
 
@@ -72,3 +85,5 @@ POST https://localhost/mcp
 - `cmd/mcp-gateway`：MCP 工具发现与 authority 代理行为。
 
 完整 Compose 冒烟应确认 `world_snapshots` 存在一行，并且 `outbox` 行最终被 Worker 标记完成。
+
+部署配置、数据库备份恢复和常见故障处理见 [运行手册](docs/operations.md)。

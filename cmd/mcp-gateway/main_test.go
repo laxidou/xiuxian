@@ -2,24 +2,27 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/test/bufconn"
+
+	worldv1 "xiuxian/gen/go/xiuxian/v1"
+	worldrpc "xiuxian/internal/rpc"
+	"xiuxian/internal/world"
 )
 
 func TestMCPListsToolsAndCallsAuthoritativeGameAPI(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer xiu_test" {
-			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
-		}
-		if r.URL.Path != "/api/v1/state" {
-			t.Fatalf("path = %q, want state", r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"name": "青玄", "status": "alive"})
-	}))
-	defer upstream.Close()
-	gateway := newGateway(upstream.URL, upstream.Client())
+	gateway := newRPCGateway(nil)
 
 	listBody := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	listRequest := httptest.NewRequest(http.MethodPost, "/mcp", listBody)
@@ -30,12 +33,88 @@ func TestMCPListsToolsAndCallsAuthoritativeGameAPI(t *testing.T) {
 		t.Fatalf("tools/list response = %d %s", listResponse.Code, listResponse.Body.String())
 	}
 
-	callBody := bytes.NewBufferString(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_state","arguments":{}}}`)
-	callRequest := httptest.NewRequest(http.MethodPost, "/mcp", callBody)
-	callRequest.Header.Set("Authorization", "Bearer xiu_test")
-	callResponse := httptest.NewRecorder()
-	gateway.ServeHTTP(callResponse, callRequest)
-	if callResponse.Code != http.StatusOK || !bytes.Contains(callResponse.Body.Bytes(), []byte(`青玄`)) {
-		t.Fatalf("tools/call response = %d %s", callResponse.Code, callResponse.Body.String())
+}
+
+func TestMCPProductionGatewayUsesGeneratedGRPCContract(t *testing.T) {
+	service := world.NewService(world.NewManualClock(time.UnixMilli(1_700_000_000_000)))
+	_, state, err := service.Register("grpc-owner", "a sufficiently long password", "契约真人")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := service.RotateMCPKey(state.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener := bufconn.Listen(1 << 20)
+	server := grpc.NewServer()
+	worldv1.RegisterWorldServiceServer(server, worldrpc.NewServer(service))
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	connection, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return listener.Dial()
+	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	gateway := newRPCGateway(worldv1.NewWorldServiceClient(connection))
+
+	body := bytes.NewBufferString(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_state","arguments":{}}}`)
+	request := httptest.NewRequest(http.MethodPost, "/mcp", body)
+	request.Header.Set("Authorization", "Bearer "+key)
+	response := httptest.NewRecorder()
+	gateway.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`契约真人`)) || !bytes.Contains(response.Body.Bytes(), []byte(`realm_name`)) {
+		t.Fatalf("gRPC MCP response = %d %s", response.Code, response.Body.String())
+	}
+	for id := 4; id <= 7; id++ {
+		body = bytes.NewBufferString(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"get_state","arguments":{}}}`, id))
+		request = httptest.NewRequest(http.MethodPost, "/mcp", body)
+		request.Header.Set("Authorization", "Bearer "+key)
+		response = httptest.NewRecorder()
+		gateway.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("burst call %d status = %d, want 200", id, response.Code)
+		}
+	}
+	body = bytes.NewBufferString(`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"get_state","arguments":{}}}`)
+	request = httptest.NewRequest(http.MethodPost, "/mcp", body)
+	request.Header.Set("Authorization", "Bearer "+key)
+	response = httptest.NewRecorder()
+	gateway.ServeHTTP(response, request)
+	if response.Code != http.StatusTooManyRequests {
+		t.Fatalf("sixth immediate call status = %d, want 429", response.Code)
+	}
+}
+
+func TestMCPHealthReflectsGRPCAuthorityStatus(t *testing.T) {
+	listener := bufconn.Listen(1 << 20)
+	server := grpc.NewServer()
+	healthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(server, healthServer)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	connection, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+		return listener.Dial()
+	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	gateway := newRPCGateway(nil, grpc_health_v1.NewHealthClient(connection))
+
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	response := httptest.NewRecorder()
+	gateway.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("serving health status = %d, want 200", response.Code)
+	}
+
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+	request = httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	response = httptest.NewRecorder()
+	gateway.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("not-serving health status = %d, want 503", response.Code)
 	}
 }

@@ -1,0 +1,883 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "xiuxian/v1/world.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "WorldService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/xiuxian.v1.WorldService/CloseConversation": {
+      "post": {
+        "operationId": "WorldService_CloseConversation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Conversation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CloseConversationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/GetState": {
+      "post": {
+        "operationId": "WorldService_GetState",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RoleState"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GetStateRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/GetWorldBounds": {
+      "post": {
+        "operationId": "WorldService_GetWorldBounds",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WorldBounds"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GetWorldBoundsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/ListConversations": {
+      "post": {
+        "operationId": "WorldService_ListConversations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListConversationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ListConversationsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/ListRecentEvents": {
+      "post": {
+        "operationId": "WorldService_ListRecentEvents",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListRecentEventsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ListRecentEventsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/Move": {
+      "post": {
+        "operationId": "WorldService_Move",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RoleState"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1MoveRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/Reincarnate": {
+      "post": {
+        "operationId": "WorldService_Reincarnate",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RoleState"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ReincarnateRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/RequestConversation": {
+      "post": {
+        "operationId": "WorldService_RequestConversation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Conversation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RequestConversationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/RespondConversation": {
+      "post": {
+        "operationId": "WorldService_RespondConversation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Conversation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RespondConversationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/Scan": {
+      "post": {
+        "operationId": "WorldService_Scan",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ScanResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ScanRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/SeizeCultivation": {
+      "post": {
+        "operationId": "WorldService_SeizeCultivation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RoleState"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SeizeCultivationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/SendConversationMessage": {
+      "post": {
+        "operationId": "WorldService_SendConversationMessage",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ConversationMessage"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SendConversationMessageRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/Stop": {
+      "post": {
+        "operationId": "WorldService_Stop",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RoleState"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StopRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/xiuxian.v1.WorldService/TransferCultivation": {
+      "post": {
+        "operationId": "WorldService_TransferCultivation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RoleState"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TransferCultivationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1CloseConversationRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "conversationId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Conversation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "requesterId": {
+          "type": "string"
+        },
+        "recipientId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ConversationMessage"
+          }
+        },
+        "createdAtUnixMillis": {
+          "type": "string",
+          "format": "int64"
+        },
+        "updatedAtUnixMillis": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1ConversationMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "senderId": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "trusted": {
+          "type": "boolean"
+        },
+        "createdAtUnixMillis": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1GetStateRequest": {
+      "type": "object"
+    },
+    "v1GetWorldBoundsRequest": {
+      "type": "object"
+    },
+    "v1ListConversationsRequest": {
+      "type": "object"
+    },
+    "v1ListConversationsResponse": {
+      "type": "object",
+      "properties": {
+        "conversations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Conversation"
+          }
+        }
+      }
+    },
+    "v1ListRecentEventsRequest": {
+      "type": "object",
+      "properties": {
+        "after": {
+          "type": "string",
+          "format": "int64"
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1ListRecentEventsResponse": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WorldEvent"
+          }
+        }
+      }
+    },
+    "v1MoveRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/definitions/v1Position"
+        }
+      }
+    },
+    "v1OpportunitySignal": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "distance": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "v1Position": {
+      "type": "object",
+      "properties": {
+        "xMilliunits": {
+          "type": "string",
+          "format": "int64"
+        },
+        "yMilliunits": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1ReincarnateRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/definitions/v1Position"
+        },
+        "random": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1RequestConversationRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RespondConversationRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "conversationId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RoleState": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "lifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string"
+        },
+        "cultivationMillis": {
+          "type": "string",
+          "format": "int64"
+        },
+        "realmLevel": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "realmName": {
+          "type": "string"
+        },
+        "ageMillis": {
+          "type": "string",
+          "format": "int64"
+        },
+        "lifespanMillis": {
+          "type": "string",
+          "format": "int64"
+        },
+        "speed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "senseRadius": {
+          "type": "string",
+          "format": "int64"
+        },
+        "position": {
+          "$ref": "#/definitions/v1Position"
+        },
+        "movementState": {
+          "type": "string"
+        },
+        "stateVersion": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1ScanRequest": {
+      "type": "object"
+    },
+    "v1ScanResponse": {
+      "type": "object",
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ScanRole"
+          }
+        },
+        "opportunities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1OpportunitySignal"
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1ScanRole": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "realm": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "distance": {
+          "type": "number",
+          "format": "double"
+        },
+        "position": {
+          "$ref": "#/definitions/v1Position"
+        }
+      }
+    },
+    "v1SeizeCultivationRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SendConversationMessageRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "conversationId": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        }
+      }
+    },
+    "v1StopRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TransferCultivationRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "amountMinutes": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1WorldBounds": {
+      "type": "object",
+      "properties": {
+        "minXMilliunits": {
+          "type": "string",
+          "format": "int64"
+        },
+        "maxXMilliunits": {
+          "type": "string",
+          "format": "int64"
+        },
+        "minYMilliunits": {
+          "type": "string",
+          "format": "int64"
+        },
+        "maxYMilliunits": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1WorldEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "type": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "createdAtUnixMillis": {
+          "type": "string",
+          "format": "int64"
+        },
+        "lifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "dataJson": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

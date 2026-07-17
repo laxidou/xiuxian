@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { api, Conversation, RoleState, ScanResult, WorldEvent } from './api'
+import { api, Conversation, Health, RoleState, ScanResult, WorldEvent } from './api'
 
 const formatDuration = (seconds: number) => {
   const hours = Math.floor(seconds / 3600)
@@ -15,6 +15,7 @@ function App() {
   const [bounds, setBounds] = useState({ min_x: 0, max_x: 0, min_y: 0, max_y: 0 })
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [health, setHealth] = useState<Health | null>(null)
 
   const run = useCallback(async <T,>(operation: () => Promise<T>, success?: string) => {
     setError('')
@@ -28,17 +29,22 @@ function App() {
     }
   }, [])
 
-  const refresh = useCallback(async () => {
-    const current = await run(api.state)
-    if (!current) return
-    setState(current)
-    const [eventResult, conversationResult, boundsResult] = await Promise.all([api.events(), api.conversations(), api.bounds()])
-    setEvents(eventResult.events)
-    setConversations(conversationResult.conversations)
-    setBounds(boundsResult)
-  }, [run])
+  const refresh = useCallback(async (silent = false) => {
+    try {
+      const current = await api.state()
+      setState(current)
+      const [eventResult, conversationResult, boundsResult] = await Promise.all([api.events(), api.conversations(), api.bounds()])
+      setEvents(eventResult.events)
+      setConversations(conversationResult.conversations)
+      setBounds(boundsResult)
+    } catch (reason) {
+      if (!silent) setError(reason instanceof Error ? reason.message : '未知错误')
+    }
+  }, [])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void refresh(true) }, [refresh])
+
+  useEffect(() => { void api.health().then(setHealth).catch(() => setHealth(null)) }, [])
 
   useEffect(() => {
     if (!state) return
@@ -52,7 +58,7 @@ function App() {
   }, [state?.id, events.at(-1)?.id, refresh])
 
   if (!state) {
-    return <AuthScreen onAuthenticated={setState} error={error} run={run} />
+    return <AuthScreen onAuthenticated={setState} error={error} health={health} run={run} />
   }
 
   const updateState = (next?: RoleState) => {
@@ -67,6 +73,7 @@ function App() {
           <p className="eyebrow">单一连续世界 · 第 {state.life_number} 世</p>
           <h1>{state.name}</h1>
           <p>{state.status === 'alive' ? `${state.realm}，正在世间` : '本世已终，等待转世'}</p>
+          <p className="service-status">世界权威：{health ? `${health.service} ${health.version} · 正常` : '连接中断'}</p>
         </div>
         <button className="quiet" onClick={() => void run(api.logout).then(() => setState(null))}>退出登录</button>
       </header>
@@ -123,7 +130,7 @@ function App() {
 
 type Runner = <T>(operation: () => Promise<T>, success?: string) => Promise<T | undefined>
 
-function AuthScreen({ onAuthenticated, error, run }: { onAuthenticated: (state: RoleState) => void; error: string; run: Runner }) {
+function AuthScreen({ onAuthenticated, error, health, run }: { onAuthenticated: (state: RoleState) => void; error: string; health: Health | null; run: Runner }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
@@ -133,7 +140,7 @@ function AuthScreen({ onAuthenticated, error, run }: { onAuthenticated: (state: 
     const state = await run(() => mode === 'login' ? api.login(account, password) : api.register(account, password, roleName))
     if (state) onAuthenticated(state)
   }
-  return <main className="auth-shell"><section className="auth-card"><p className="eyebrow">无尽仙途</p><h1>一个不会停下的修仙世界</h1><p>时间增长修为，也消耗寿元。文字是这里唯一的地图。</p><div className="tabs"><button aria-pressed={mode === 'login'} onClick={() => setMode('login')}>登录</button><button aria-pressed={mode === 'register'} onClick={() => setMode('register')}>创建角色</button></div><form onSubmit={submit}><label>账号<input required value={account} onChange={(e) => setAccount(e.target.value)} /></label><label>密码<input required minLength={12} type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>{mode === 'register' && <label>永久角色名<input required value={roleName} onChange={(e) => setRoleName(e.target.value)} /></label>}<button type="submit">{mode === 'login' ? '进入世界' : '创建并进入'}</button></form>{error && <p className="notice error" role="alert">{error}</p>}</section></main>
+  return <main className="auth-shell"><section className="auth-card"><p className="eyebrow">无尽仙途</p><h1>一个不会停下的修仙世界</h1><p>时间增长修为，也消耗寿元。文字是这里唯一的地图。</p><p className="service-status" role="status">世界权威：{health ? `${health.service} ${health.version} · 正常` : '连接中断'}</p><div className="tabs"><button aria-pressed={mode === 'login'} onClick={() => setMode('login')}>登录</button><button aria-pressed={mode === 'register'} onClick={() => setMode('register')}>创建角色</button></div><form onSubmit={submit}><label>账号<input required value={account} onChange={(e) => setAccount(e.target.value)} /></label><label>密码<input required minLength={12} type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>{mode === 'register' && <label>永久角色名<input required value={roleName} onChange={(e) => setRoleName(e.target.value)} /></label>}<button type="submit">{mode === 'login' ? '进入世界' : '创建并进入'}</button></form>{error && <p className="notice error" role="alert">{error}</p>}</section></main>
 }
 
 function Stat({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div> }

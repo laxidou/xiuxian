@@ -7,15 +7,15 @@ CREATE TABLE world_snapshots (
 );
 
 CREATE TABLE accounts (
-    id uuid PRIMARY KEY,
+    id text PRIMARY KEY,
     account_identifier text NOT NULL UNIQUE,
     password_hash bytea NOT NULL,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
 CREATE TABLE roles (
-    id uuid PRIMARY KEY,
-    account_id uuid NOT NULL UNIQUE REFERENCES accounts(id),
+    id text PRIMARY KEY,
+    account_id text NOT NULL UNIQUE REFERENCES accounts(id),
     name text NOT NULL UNIQUE,
     life_number bigint NOT NULL CHECK (life_number >= 1),
     status text NOT NULL CHECK (status IN ('alive', 'pending_reincarnation')),
@@ -26,7 +26,7 @@ CREATE TABLE roles (
 );
 
 CREATE TABLE lives (
-    role_id uuid PRIMARY KEY REFERENCES roles(id),
+    role_id text PRIMARY KEY REFERENCES roles(id),
     life_started_at timestamptz NOT NULL,
     cultivation_millis bigint NOT NULL DEFAULT 0,
     cultivation_at timestamptz NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE lives (
 );
 
 CREATE TABLE trajectories (
-    role_id uuid PRIMARY KEY REFERENCES roles(id),
+    role_id text PRIMARY KEY REFERENCES roles(id),
     start_x bigint NOT NULL,
     start_y bigint NOT NULL,
     target_x bigint NOT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE trajectories (
 );
 
 CREATE TABLE opportunities (
-    id uuid PRIMARY KEY,
+    id text PRIMARY KEY,
     total_cultivation_millis bigint NOT NULL,
     converted_cultivation_millis bigint NOT NULL DEFAULT 0,
     level integer NOT NULL,
@@ -57,15 +57,15 @@ CREATE TABLE opportunities (
     position_x bigint NOT NULL,
     position_y bigint NOT NULL,
     status text NOT NULL,
-    bound_role_id uuid REFERENCES roles(id),
+    bound_role_id text REFERENCES roles(id),
     bound_at timestamptz,
     state_version bigint NOT NULL
 );
 
 CREATE TABLE conversations (
-    id uuid PRIMARY KEY,
-    requester_role_id uuid NOT NULL REFERENCES roles(id),
-    recipient_role_id uuid NOT NULL REFERENCES roles(id),
+    id text PRIMARY KEY,
+    requester_role_id text NOT NULL REFERENCES roles(id),
+    recipient_role_id text NOT NULL REFERENCES roles(id),
     status text NOT NULL,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL
@@ -73,15 +73,15 @@ CREATE TABLE conversations (
 
 CREATE TABLE conversation_messages (
     id bigserial PRIMARY KEY,
-    conversation_id uuid NOT NULL REFERENCES conversations(id),
-    sender_role_id uuid NOT NULL REFERENCES roles(id),
+    conversation_id text NOT NULL REFERENCES conversations(id),
+    sender_role_id text NOT NULL REFERENCES roles(id),
     content text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
 CREATE TABLE cultivation_ledger (
     id bigserial PRIMARY KEY,
-    role_id uuid NOT NULL REFERENCES roles(id),
+    role_id text NOT NULL REFERENCES roles(id),
     life_number bigint NOT NULL,
     kind text NOT NULL,
     delta_millis bigint NOT NULL,
@@ -91,7 +91,7 @@ CREATE TABLE cultivation_ledger (
 
 CREATE TABLE role_events (
     id bigserial PRIMARY KEY,
-    role_id uuid NOT NULL REFERENCES roles(id),
+    role_id text NOT NULL REFERENCES roles(id),
     life_number bigint NOT NULL,
     event_type text NOT NULL,
     payload jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -100,7 +100,7 @@ CREATE TABLE role_events (
 CREATE INDEX role_events_recent_idx ON role_events (role_id, created_at DESC, id DESC);
 
 CREATE TABLE idempotency_records (
-    role_id uuid NOT NULL REFERENCES roles(id),
+    role_id text NOT NULL REFERENCES roles(id),
     idempotency_key text NOT NULL,
     command_name text NOT NULL,
     response jsonb NOT NULL,

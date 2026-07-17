@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	worldrpc "xiuxian/internal/rpc"
 	"xiuxian/internal/rules"
 	"xiuxian/internal/world"
 )
@@ -16,6 +21,8 @@ import (
 type Options struct {
 	AllowTestClock bool
 	SecureCookies  bool
+	WorkerToken    string
+	Version        string
 }
 
 type handler struct {
@@ -25,10 +32,18 @@ type handler struct {
 }
 
 func NewHandler(service *world.Service, options Options) http.Handler {
+	if strings.TrimSpace(options.Version) == "" {
+		options.Version = "dev"
+	}
 	h := &handler{service: service, options: options, mux: http.NewServeMux()}
-	h.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
+	health := func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "game-server", "version": options.Version})
+	}
+	h.mux.HandleFunc("GET /healthz", health)
+	h.mux.HandleFunc("GET /api/v1/healthz", health)
+	h.mux.HandleFunc("POST /internal/deadlines/settle", h.settleDeadline)
+	h.mux.HandleFunc("POST /xiuxian.v1.WorldService/GetState", h.auth(h.generatedState))
+	h.mux.HandleFunc("POST /xiuxian.v1.WorldService/GetWorldBounds", h.auth(h.generatedBounds))
 	h.mux.HandleFunc("POST /api/v1/auth/register", h.register)
 	h.mux.HandleFunc("POST /api/v1/auth/login", h.login)
 	h.mux.HandleFunc("POST /api/v1/auth/logout", h.auth(h.logout))
@@ -108,6 +123,19 @@ func (h *handler) state(w http.ResponseWriter, _ *http.Request, roleID string) {
 		return
 	}
 	writeJSON(w, http.StatusOK, state)
+}
+
+func (h *handler) generatedState(w http.ResponseWriter, _ *http.Request, roleID string) {
+	state, err := h.service.State(roleID)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeProtoJSON(w, worldrpc.RoleState(state))
+}
+
+func (h *handler) generatedBounds(w http.ResponseWriter, _ *http.Request, _ string) {
+	writeProtoJSON(w, worldrpc.WorldBounds(h.service.Bounds()))
 }
 
 func (h *handler) move(w http.ResponseWriter, r *http.Request, roleID string) {
@@ -345,6 +373,27 @@ func (h *handler) advanceClock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int64{"now": manual.Now().UnixMilli()})
 }
 
+func (h *handler) settleDeadline(w http.ResponseWriter, r *http.Request) {
+	provided := r.Header.Get("X-Worker-Token")
+	if h.options.WorkerToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(h.options.WorkerToken)) != 1 {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "worker authentication required"})
+		return
+	}
+	var input struct {
+		RoleID       string `json:"role_id"`
+		StateVersion int64  `json:"state_version"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	settled, err := h.service.SettleDeadline(input.RoleID, input.StateVersion)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"settled": settled})
+}
+
 func (h *handler) auth(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("xiuxian_session")
@@ -415,6 +464,17 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeProtoJSON(w http.ResponseWriter, message proto.Message) {
+	payload, err := protojson.Marshal(message)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "encode contract response"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
 }
 
 func securityHeaders(next http.Handler) http.Handler {

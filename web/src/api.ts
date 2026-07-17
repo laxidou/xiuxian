@@ -1,4 +1,15 @@
+import { OpenAPI } from './generated/core/OpenAPI'
+import type { rpcStatus } from './generated/models/rpcStatus'
+import type { v1RoleState } from './generated/models/v1RoleState'
+import type { v1WorldBounds } from './generated/models/v1WorldBounds'
+import { WorldServiceService } from './generated/services/WorldServiceService'
+
+OpenAPI.WITH_CREDENTIALS = true
+OpenAPI.CREDENTIALS = 'include'
+
 export type Position = { x: number; y: number }
+
+export type Health = { status: 'ok'; service: string; version: string }
 
 export type RoleState = {
   id: string
@@ -59,11 +70,12 @@ const command = <T>(path: string, body: unknown, key = crypto.randomUUID()) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': key } })
 
 export const api = {
+  health: () => request<Health>('/api/v1/healthz'),
   register: (account: string, password: string, role_name: string) => command<RoleState>('/api/v1/auth/register', { account, password, role_name }),
   login: (account: string, password: string) => command<RoleState>('/api/v1/auth/login', { account, password }),
   logout: () => request<void>('/api/v1/auth/logout', { method: 'POST', body: '{}' }),
-  state: () => request<RoleState>('/api/v1/state'),
-  bounds: () => request<{ min_x: number; max_x: number; min_y: number; max_y: number }>('/api/v1/world/bounds'),
+  state: async () => contractState(await WorldServiceService.worldServiceGetState({})),
+  bounds: async () => contractBounds(await WorldServiceService.worldServiceGetWorldBounds({})),
   move: (x: number, y: number) => command<RoleState>('/api/v1/movement/move', { x, y }),
   stop: () => command<RoleState>('/api/v1/movement/stop', {}),
   scan: () => command<ScanResult>('/api/v1/scan', {}),
@@ -78,4 +90,38 @@ export const api = {
   closeConversation: (id: string) => command<Conversation>(`/api/v1/conversations/${id}/close`, {}),
   rotateMCPKey: () => request<{ api_key: string }>('/api/v1/mcp-key/rotate', { method: 'POST', body: '{}' }),
   revokeMCPKey: () => request<void>('/api/v1/mcp-key/revoke', { method: 'POST', body: '{}' }),
+}
+
+function isRPCStatus(response: v1RoleState | v1WorldBounds | rpcStatus): response is rpcStatus {
+  return 'code' in response || ('message' in response && !('id' in response))
+}
+
+function contractState(response: v1RoleState | rpcStatus): RoleState {
+  if (isRPCStatus(response)) throw new Error(response.message ?? '契约请求失败')
+  return {
+    id: response.id ?? '',
+    name: response.name ?? '',
+    life_number: Number(response.lifeNumber ?? 0),
+    status: response.status as RoleState['status'],
+    cultivation: Number(response.cultivationMillis ?? 0) / 60000,
+    realm_level: response.realmLevel ?? 0,
+    realm: response.realmName ?? '',
+    age_seconds: Number(response.ageMillis ?? 0) / 1000,
+    lifespan_seconds: Number(response.lifespanMillis ?? 0) / 1000,
+    speed: Number(response.speed ?? 0),
+    sense_radius: Number(response.senseRadius ?? 0),
+    position: { x: Number(response.position?.xMilliunits ?? 0) / 1000, y: Number(response.position?.yMilliunits ?? 0) / 1000 },
+    movement_state: response.movementState as RoleState['movement_state'],
+    state_version: Number(response.stateVersion ?? 0),
+  }
+}
+
+function contractBounds(response: v1WorldBounds | rpcStatus) {
+  if (isRPCStatus(response)) throw new Error(response.message ?? '契约请求失败')
+  return {
+    min_x: Number(response.minXMilliunits ?? 0) / 1000,
+    max_x: Number(response.maxXMilliunits ?? 0) / 1000,
+    min_y: Number(response.minYMilliunits ?? 0) / 1000,
+    max_y: Number(response.maxYMilliunits ?? 0) / 1000,
+  }
 }

@@ -13,6 +13,7 @@ h1 { margin-bottom: .35rem; font-size: clamp(2rem, 6vw, 4.5rem); font-weight: 50
 h2 { font-size: 1.25rem; color: #e3ca8b; }
 .eyebrow { color: #b9aa82; letter-spacing: .18em; text-transform: uppercase; font-size: .78rem; }
 .muted { color: #aaa993; }
+.service-status { margin-bottom: .75rem; color: #a9c6aa; font-size: .82rem; }
 .notice { position: sticky; top: .5rem; z-index: 3; padding: .8rem 1rem; background: #293e30; border-left: 3px solid #80aa83; }
 .notice.error { background: #462924; border-color: #c26b5b; }
 .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 2rem 0; background: #495046; border: 1px solid #495046; }

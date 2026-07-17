@@ -42,7 +42,10 @@ services:
       DATABASE_URL: postgres://xiuxian:xiuxian_dev@postgres:5432/xiuxian?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       GAME_SERVER_ADDRESS: :8080
+      GAME_SERVER_GRPC_ADDRESS: :9090
       COOKIE_SECURE: "false"
+      WORKER_TOKEN: xiuxian-local-worker-token
+      APP_VERSION: local-compose
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -59,6 +62,8 @@ services:
     environment:
       DATABASE_URL: postgres://xiuxian:xiuxian_dev@postgres:5432/xiuxian?sslmode=disable
       REDIS_URL: redis://redis:6379/0
+      GAME_SERVER_URL: http://game-server:8080
+      WORKER_TOKEN: xiuxian-local-worker-token
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -68,7 +73,7 @@ services:
       context: .
       args: { BINARY: mcp-gateway }
     environment:
-      GAME_SERVER_URL: http://game-server:8080
+      GAME_SERVER_GRPC_ADDRESS: game-server:9090
       MCP_GATEWAY_ADDRESS: :8090
     depends_on:
       game-server: { condition: service_healthy }

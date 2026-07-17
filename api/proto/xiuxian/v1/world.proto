@@ -14,6 +14,11 @@ service WorldService {
   rpc SeizeCultivation(SeizeCultivationRequest) returns (RoleState);
   rpc Reincarnate(ReincarnateRequest) returns (RoleState);
   rpc ListRecentEvents(ListRecentEventsRequest) returns (ListRecentEventsResponse);
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  rpc RequestConversation(RequestConversationRequest) returns (Conversation);
+  rpc RespondConversation(RespondConversationRequest) returns (Conversation);
+  rpc SendConversationMessage(SendConversationMessageRequest) returns (ConversationMessage);
+  rpc CloseConversation(CloseConversationRequest) returns (Conversation);
 }
 
 message GetStateRequest {}
@@ -108,3 +113,47 @@ message WorldEvent {
 }
 
 message ListRecentEventsResponse { repeated WorldEvent events = 1; }
+
+message ListConversationsRequest {}
+
+message ConversationMessage {
+  int64 id = 1;
+  string sender_id = 2;
+  string content = 3;
+  bool trusted = 4;
+  int64 created_at_unix_millis = 5;
+}
+
+message Conversation {
+  string id = 1;
+  string requester_id = 2;
+  string recipient_id = 3;
+  string status = 4;
+  repeated ConversationMessage messages = 5;
+  int64 created_at_unix_millis = 6;
+  int64 updated_at_unix_millis = 7;
+}
+
+message ListConversationsResponse { repeated Conversation conversations = 1; }
+
+message RequestConversationRequest {
+  string idempotency_key = 1;
+  string target_id = 2;
+}
+
+message RespondConversationRequest {
+  string idempotency_key = 1;
+  string conversation_id = 2;
+  string action = 3;
+}
+
+message SendConversationMessageRequest {
+  string idempotency_key = 1;
+  string conversation_id = 2;
+  string content = 3;
+}
+
+message CloseConversationRequest {
+  string idempotency_key = 1;
+  string conversation_id = 2;
+}

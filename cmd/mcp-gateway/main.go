@@ -1,15 +1,25 @@
 package main
 
 import (
-	"bytes"
+	"context"
+	"crypto/sha256"
 	"encoding/json"
-	"io"
 	"log"
+	"math"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	worldv1 "xiuxian/gen/go/xiuxian/v1"
 )
 
 type rpcRequest struct {
@@ -29,33 +39,62 @@ type tool struct {
 }
 
 type gateway struct {
-	gameURL string
-	client  *http.Client
+	rpc    worldv1.WorldServiceClient
+	health grpc_health_v1.HealthClient
+	limits *roleLimiter
+}
+
+type roleLimiter struct {
+	mu      sync.Mutex
+	buckets map[[sha256.Size]byte]tokenBucket
+}
+
+type tokenBucket struct {
+	tokens float64
+	last   time.Time
 }
 
 func main() {
-	gameURL := os.Getenv("GAME_SERVER_URL")
-	if gameURL == "" {
-		gameURL = "http://localhost:8080"
-	}
 	address := os.Getenv("MCP_GATEWAY_ADDRESS")
 	if address == "" {
 		address = ":8090"
 	}
+	grpcAddress := os.Getenv("GAME_SERVER_GRPC_ADDRESS")
+	if grpcAddress == "" {
+		grpcAddress = "localhost:9090"
+	}
+	connection, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer connection.Close()
 	server := &http.Server{
-		Addr: address, Handler: newGateway(gameURL, &http.Client{Timeout: 15 * time.Second}),
+		Addr: address, Handler: newRPCGateway(worldv1.NewWorldServiceClient(connection), grpc_health_v1.NewHealthClient(connection)),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second,
 	}
 	log.Printf("mcp-gateway listening on %s", address)
 	log.Fatal(server.ListenAndServe())
 }
 
-func newGateway(gameURL string, client *http.Client) http.Handler {
-	return &gateway{gameURL: strings.TrimRight(gameURL, "/"), client: client}
+func newRPCGateway(client worldv1.WorldServiceClient, healthClients ...grpc_health_v1.HealthClient) http.Handler {
+	result := &gateway{rpc: client, limits: &roleLimiter{buckets: make(map[[sha256.Size]byte]tokenBucket)}}
+	if len(healthClients) > 0 {
+		result.health = healthClients[0]
+	}
+	return result
 }
 
 func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
+		if g.health != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			response, err := g.health.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+			if err != nil || response.GetStatus() != grpc_health_v1.HealthCheckResponse_SERVING {
+				writeRPCError(w, nil, -32002, "game authority unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 		return
@@ -87,99 +126,129 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "tools/list":
 		writeRPCResult(w, request.ID, map[string]any{"tools": tools()})
 	case "tools/call":
-		g.callTool(w, request, authorization)
+		if !g.limits.Allow(authorization, time.Now()) {
+			writeRPCError(w, request.ID, -32003, "role call budget exceeded", http.StatusTooManyRequests)
+			return
+		}
+		g.callToolRPC(w, request, authorization)
 	default:
 		writeRPCError(w, request.ID, -32601, "method not found", http.StatusOK)
 	}
 }
 
-func (g *gateway) callTool(w http.ResponseWriter, request rpcRequest, authorization string) {
-	method, path, body, mutating, ok := toolRequest(request.Params.Name, request.Params.Arguments)
+func (l *roleLimiter) Allow(authorization string, now time.Time) bool {
+	key := sha256.Sum256([]byte(authorization))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	bucket, ok := l.buckets[key]
 	if !ok {
-		writeRPCError(w, request.ID, -32602, "unknown tool or invalid arguments", http.StatusOK)
-		return
+		bucket = tokenBucket{tokens: 5, last: now}
 	}
-	var payload io.Reader
-	if body != nil {
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			writeRPCError(w, request.ID, -32602, "invalid tool arguments", http.StatusOK)
-			return
-		}
-		payload = bytes.NewReader(encoded)
+	elapsed := now.Sub(bucket.last).Seconds()
+	if elapsed > 0 {
+		bucket.tokens = math.Min(5, bucket.tokens+elapsed)
+		bucket.last = now
 	}
-	upstream, err := http.NewRequest(method, g.gameURL+path, payload)
-	if err != nil {
-		writeRPCError(w, request.ID, -32603, "gateway request failed", http.StatusOK)
-		return
+	if bucket.tokens < 1 {
+		l.buckets[key] = bucket
+		return false
 	}
-	upstream.Header.Set("Authorization", authorization)
-	if body != nil {
-		upstream.Header.Set("Content-Type", "application/json")
-	}
-	if mutating {
-		key, _ := request.Params.Arguments["idempotency_key"].(string)
-		if key == "" {
-			key = "mcp-" + strings.Trim(string(request.ID), `"`)
-		}
-		upstream.Header.Set("Idempotency-Key", key)
-	}
-	response, err := g.client.Do(upstream)
-	if err != nil {
-		writeRPCError(w, request.ID, -32002, "game authority unavailable", http.StatusOK)
-		return
-	}
-	defer response.Body.Close()
-	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 2<<20))
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		writeRPCResult(w, request.ID, map[string]any{
-			"content": []map[string]string{{"type": "text", "text": string(responseBody)}},
-			"isError": true,
-		})
-		return
-	}
-	writeRPCResult(w, request.ID, map[string]any{
-		"content": []map[string]string{{"type": "text", "text": string(responseBody)}},
-		"isError": false,
-	})
+	bucket.tokens--
+	l.buckets[key] = bucket
+	return true
 }
 
-func toolRequest(name string, arguments map[string]any) (method, path string, body any, mutating, ok bool) {
-	switch name {
-	case "get_state":
-		return http.MethodGet, "/api/v1/state", nil, false, true
-	case "get_world_bounds":
-		return http.MethodGet, "/api/v1/world/bounds", nil, false, true
-	case "scan":
-		return http.MethodPost, "/api/v1/scan", map[string]any{}, false, true
-	case "move":
-		return http.MethodPost, "/api/v1/movement/move", selectArgs(arguments, "x", "y"), true, has(arguments, "x", "y")
-	case "stop":
-		return http.MethodPost, "/api/v1/movement/stop", map[string]any{}, true, true
-	case "recent_events":
-		return http.MethodGet, "/api/v1/events", nil, false, true
-	case "list_conversations":
-		return http.MethodGet, "/api/v1/conversations", nil, false, true
-	case "request_conversation":
-		return http.MethodPost, "/api/v1/conversations", selectArgs(arguments, "target_id"), true, has(arguments, "target_id")
-	case "respond_conversation":
-		conversationID, valid := arguments["conversation_id"].(string)
-		return http.MethodPost, "/api/v1/conversations/" + url.PathEscape(conversationID) + "/respond", selectArgs(arguments, "action"), true, valid && has(arguments, "action")
-	case "send_conversation_message":
-		conversationID, valid := arguments["conversation_id"].(string)
-		return http.MethodPost, "/api/v1/conversations/" + url.PathEscape(conversationID) + "/messages", selectArgs(arguments, "content"), true, valid && has(arguments, "content")
-	case "close_conversation":
-		conversationID, valid := arguments["conversation_id"].(string)
-		return http.MethodPost, "/api/v1/conversations/" + url.PathEscape(conversationID) + "/close", map[string]any{}, true, valid
-	case "transfer_cultivation":
-		return http.MethodPost, "/api/v1/cultivation/transfer", selectArgs(arguments, "target_id", "amount_minutes"), true, has(arguments, "target_id", "amount_minutes")
-	case "seize_cultivation":
-		return http.MethodPost, "/api/v1/cultivation/seize", selectArgs(arguments, "target_id"), true, has(arguments, "target_id")
-	case "reincarnate":
-		return http.MethodPost, "/api/v1/reincarnate", selectArgs(arguments, "x", "y", "random"), true, true
-	default:
-		return "", "", nil, false, false
+func (g *gateway) callToolRPC(w http.ResponseWriter, request rpcRequest, authorization string) {
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", authorization)
+	key, _ := request.Params.Arguments["idempotency_key"].(string)
+	if key == "" {
+		key = "mcp-" + strings.Trim(string(request.ID), `"`)
 	}
+	var result proto.Message
+	var err error
+	switch request.Params.Name {
+	case "get_state":
+		result, err = g.rpc.GetState(ctx, &worldv1.GetStateRequest{})
+	case "get_world_bounds":
+		result, err = g.rpc.GetWorldBounds(ctx, &worldv1.GetWorldBoundsRequest{})
+	case "scan":
+		result, err = g.rpc.Scan(ctx, &worldv1.ScanRequest{})
+	case "move":
+		x, xOK := numberArgument(request.Params.Arguments, "x")
+		y, yOK := numberArgument(request.Params.Arguments, "y")
+		if !xOK || !yOK {
+			writeRPCError(w, request.ID, -32602, "x and y are required", http.StatusOK)
+			return
+		}
+		result, err = g.rpc.Move(ctx, &worldv1.MoveRequest{IdempotencyKey: key, Target: &worldv1.Position{XMilliunits: int64(math.Round(x * 1000)), YMilliunits: int64(math.Round(y * 1000))}})
+	case "stop":
+		result, err = g.rpc.Stop(ctx, &worldv1.StopRequest{IdempotencyKey: key})
+	case "recent_events":
+		result, err = g.rpc.ListRecentEvents(ctx, &worldv1.ListRecentEventsRequest{Limit: 50})
+	case "list_conversations":
+		result, err = g.rpc.ListConversations(ctx, &worldv1.ListConversationsRequest{})
+	case "request_conversation":
+		result, err = g.rpc.RequestConversation(ctx, &worldv1.RequestConversationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id")})
+	case "respond_conversation":
+		result, err = g.rpc.RespondConversation(ctx, &worldv1.RespondConversationRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id"), Action: stringArgument(request.Params.Arguments, "action")})
+	case "send_conversation_message":
+		result, err = g.rpc.SendConversationMessage(ctx, &worldv1.SendConversationMessageRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id"), Content: stringArgument(request.Params.Arguments, "content")})
+	case "close_conversation":
+		result, err = g.rpc.CloseConversation(ctx, &worldv1.CloseConversationRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id")})
+	case "transfer_cultivation":
+		amount, ok := integerArgument(request.Params.Arguments, "amount_minutes")
+		if !ok {
+			writeRPCError(w, request.ID, -32602, "amount_minutes is required", http.StatusOK)
+			return
+		}
+		result, err = g.rpc.TransferCultivation(ctx, &worldv1.TransferCultivationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id"), AmountMinutes: amount})
+	case "seize_cultivation":
+		result, err = g.rpc.SeizeCultivation(ctx, &worldv1.SeizeCultivationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id")})
+	case "reincarnate":
+		random, _ := request.Params.Arguments["random"].(bool)
+		reincarnate := &worldv1.ReincarnateRequest{IdempotencyKey: key, Random: random}
+		if !random {
+			x, xOK := numberArgument(request.Params.Arguments, "x")
+			y, yOK := numberArgument(request.Params.Arguments, "y")
+			if !xOK || !yOK {
+				writeRPCError(w, request.ID, -32602, "x and y are required unless random is true", http.StatusOK)
+				return
+			}
+			reincarnate.Position = &worldv1.Position{XMilliunits: int64(math.Round(x * 1000)), YMilliunits: int64(math.Round(y * 1000))}
+		}
+		result, err = g.rpc.Reincarnate(ctx, reincarnate)
+	default:
+		writeRPCError(w, request.ID, -32602, "unknown tool", http.StatusOK)
+		return
+	}
+	if err != nil {
+		writeRPCResult(w, request.ID, map[string]any{"content": []map[string]string{{"type": "text", "text": err.Error()}}, "isError": true})
+		return
+	}
+	payload, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(result)
+	if err != nil {
+		writeRPCError(w, request.ID, -32603, "encode authority response", http.StatusOK)
+		return
+	}
+	writeRPCResult(w, request.ID, map[string]any{"content": []map[string]string{{"type": "text", "text": string(payload)}}, "isError": false})
+}
+
+func stringArgument(arguments map[string]any, key string) string {
+	value, _ := arguments[key].(string)
+	return value
+}
+
+func numberArgument(arguments map[string]any, key string) (float64, bool) {
+	value, ok := arguments[key].(float64)
+	return value, ok
+}
+
+func integerArgument(arguments map[string]any, key string) (int64, bool) {
+	value, ok := numberArgument(arguments, key)
+	if !ok || value != math.Trunc(value) {
+		return 0, false
+	}
+	return int64(value), true
 }
 
 func tools() []tool {
@@ -197,34 +266,15 @@ func tools() []tool {
 		{Name: "move", Description: "Start or replace continuous movement", InputSchema: object(map[string]any{"x": numberField, "y": numberField, "idempotency_key": keyField}, "x", "y")},
 		{Name: "stop", Description: "Stop at the authoritative current position", InputSchema: object(map[string]any{"idempotency_key": keyField})},
 		{Name: "recent_events", Description: "Read durable recent events", InputSchema: object(nil)},
-		{Name: "list_conversations", Description: "List conversations and untrusted player messages", InputSchema: object(nil)},
+		{Name: "list_conversations", Description: "List conversations and untrusted role messages", InputSchema: object(nil)},
 		{Name: "request_conversation", Description: "Request conversation with a sensed role", InputSchema: object(map[string]any{"target_id": stringField, "idempotency_key": keyField}, "target_id")},
 		{Name: "respond_conversation", Description: "Accept, reject, or ignore an incoming conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "action": map[string]any{"type": "string", "enum": []string{"accept", "reject", "ignore"}}, "idempotency_key": keyField}, "conversation_id", "action")},
-		{Name: "send_conversation_message", Description: "Send untrusted player content in an accepted conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "content": stringField, "idempotency_key": keyField}, "conversation_id", "content")},
+		{Name: "send_conversation_message", Description: "Send untrusted role content in an accepted conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "content": stringField, "idempotency_key": keyField}, "conversation_id", "content")},
 		{Name: "close_conversation", Description: "Close a conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "idempotency_key": keyField}, "conversation_id")},
 		{Name: "transfer_cultivation", Description: "Transfer positive whole cultivation minutes", InputSchema: object(map[string]any{"target_id": stringField, "amount_minutes": integerField, "idempotency_key": keyField}, "target_id", "amount_minutes")},
 		{Name: "seize_cultivation", Description: "夺功 from a lower-realm role at the exact same coordinate", InputSchema: object(map[string]any{"target_id": stringField, "idempotency_key": keyField}, "target_id")},
 		{Name: "reincarnate", Description: "Reincarnate at an in-bounds coordinate or randomly", InputSchema: object(map[string]any{"x": numberField, "y": numberField, "random": map[string]any{"type": "boolean"}, "idempotency_key": keyField})},
 	}
-}
-
-func selectArgs(arguments map[string]any, keys ...string) map[string]any {
-	result := make(map[string]any, len(keys))
-	for _, key := range keys {
-		if value, exists := arguments[key]; exists {
-			result[key] = value
-		}
-	}
-	return result
-}
-
-func has(arguments map[string]any, keys ...string) bool {
-	for _, key := range keys {
-		if _, ok := arguments[key]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 func writeRPCResult(w http.ResponseWriter, id json.RawMessage, result any) {

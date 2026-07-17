@@ -5,8 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -65,7 +63,7 @@ type Role struct {
 	Account               string
 	Name                  string
 	LifeNumber            int64
-	Status                string
+	Status                RoleStatus
 	LifeStartedAt         time.Time
 	CultivationBase       rules.Cultivation
 	CultivationAt         time.Time
@@ -84,7 +82,7 @@ type State struct {
 	ID              string         `json:"id"`
 	Name            string         `json:"name"`
 	LifeNumber      int64          `json:"life_number"`
-	Status          string         `json:"status"`
+	Status          RoleStatus     `json:"status"`
 	Cultivation     float64        `json:"cultivation"`
 	RealmLevel      int            `json:"realm_level"`
 	Realm           string         `json:"realm"`
@@ -93,7 +91,7 @@ type State struct {
 	Speed           int64          `json:"speed"`
 	SenseRadius     int64          `json:"sense_radius"`
 	Position        PublicPosition `json:"position"`
-	MovementState   string         `json:"movement_state"`
+	MovementState   MovementState  `json:"movement_state"`
 	StateVersion    int64          `json:"state_version"`
 }
 
@@ -107,6 +105,41 @@ type account struct {
 	roleID       string
 }
 
+type RoleStatus string
+
+const (
+	RoleAlive                RoleStatus = "alive"
+	RolePendingReincarnation RoleStatus = "pending_reincarnation"
+)
+
+type OpportunityStatus string
+
+const (
+	OpportunityUnplaced  OpportunityStatus = "unplaced"
+	OpportunityUnclaimed OpportunityStatus = "unclaimed"
+	OpportunityBound     OpportunityStatus = "bound"
+	OpportunityConsumed  OpportunityStatus = "consumed"
+	OpportunityDiscarded OpportunityStatus = "discarded"
+)
+
+type ConversationStatus string
+
+const (
+	ConversationRequested ConversationStatus = "requested"
+	ConversationAccepted  ConversationStatus = "accepted"
+	ConversationRejected  ConversationStatus = "rejected"
+	ConversationClosed    ConversationStatus = "closed"
+)
+
+type MovementState string
+
+const (
+	MovementIdle   MovementState = "idle"
+	MovementMoving MovementState = "moving"
+)
+
+type EventType string
+
 type session struct {
 	RoleID    string
 	ExpiresAt time.Time
@@ -114,7 +147,7 @@ type session struct {
 
 type Event struct {
 	ID         int64          `json:"id"`
-	Type       string         `json:"type"`
+	Type       EventType      `json:"type"`
 	Message    string         `json:"message"`
 	CreatedAt  int64          `json:"created_at"`
 	LifeNumber int64          `json:"life_number"`
@@ -129,21 +162,23 @@ type Bounds struct {
 }
 
 type Opportunity struct {
-	ID          string
-	Position    rules.Position
-	Cultivation rules.Cultivation
-	SenseRadius rules.Coordinate
-	Status      string
-	BoundRoleID string
-	BoundAt     time.Time
-	Credited    rules.Cultivation
+	ID            string
+	Position      rules.Position
+	Level         int
+	Cultivation   rules.Cultivation
+	SenseRadius   rules.Coordinate
+	Status        OpportunityStatus
+	BoundRoleID   string
+	BoundAt       time.Time
+	Credited      rules.Cultivation
+	DeathPosition rules.Position
 }
 
 type ScanRole struct {
 	ID       string          `json:"id"`
 	Name     string          `json:"name"`
 	Realm    string          `json:"realm"`
-	Status   string          `json:"status"`
+	Status   RoleStatus      `json:"status"`
 	Distance float64         `json:"distance"`
 	Position *PublicPosition `json:"position,omitempty"`
 }
@@ -171,7 +206,7 @@ type Conversation struct {
 	ID          string                `json:"id"`
 	RequesterID string                `json:"requester_id"`
 	RecipientID string                `json:"recipient_id"`
-	Status      string                `json:"status"`
+	Status      ConversationStatus    `json:"status"`
 	Messages    []ConversationMessage `json:"messages"`
 	CreatedAt   int64                 `json:"created_at"`
 	UpdatedAt   int64                 `json:"updated_at"`
@@ -201,6 +236,10 @@ type Service struct {
 type DurableStore interface {
 	Load(context.Context) ([]byte, error)
 	Save(context.Context, []byte) error
+}
+
+type authorityTimeStore interface {
+	AuthorityNow(context.Context) (time.Time, error)
 }
 
 func NewService(clock Clock) *Service {
@@ -266,7 +305,7 @@ func (s *Service) Register(accountName, password, roleName string) (string, Stat
 		Account:       accountName,
 		Name:          roleName,
 		LifeNumber:    1,
-		Status:        "alive",
+		Status:        RoleAlive,
 		LifeStartedAt: now,
 		CultivationAt: now,
 		LastSettledAt: now,
@@ -396,6 +435,25 @@ func (s *Service) State(roleID string) (State, error) {
 	return state, nil
 }
 
+func (s *Service) SettleDeadline(roleID string, expectedVersion int64) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	role, ok := s.roles[roleID]
+	if !ok {
+		return false, ErrNotFound
+	}
+	if role.StateVersion != expectedVersion || role.Status != RoleAlive {
+		return false, nil
+	}
+	before := role.Status
+	now := s.authoritativeNowLocked(role)
+	s.stateLocked(role, now)
+	if err := s.persistLocked(); err != nil {
+		return false, err
+	}
+	return before == RoleAlive && role.Status == RolePendingReincarnation, nil
+}
+
 func (s *Service) Move(roleID, idempotencyKey string, target rules.Position) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
@@ -411,7 +469,7 @@ func (s *Service) Move(roleID, idempotencyKey string, target rules.Position) (St
 	}
 	now := s.authoritativeNowLocked(role)
 	current := s.stateLocked(role, now)
-	if role.Status != "alive" {
+	if role.Status != RoleAlive {
 		return State{}, ErrNotAlive
 	}
 	position := rules.Position{X: rules.Units(current.Position.X), Y: rules.Units(current.Position.Y)}
@@ -443,7 +501,7 @@ func (s *Service) Stop(roleID, idempotencyKey string) (State, error) {
 	}
 	now := s.authoritativeNowLocked(role)
 	current := s.stateLocked(role, now)
-	if role.Status != "alive" {
+	if role.Status != RoleAlive {
 		return State{}, ErrNotAlive
 	}
 	role.Position = positionOfState(current)
@@ -468,7 +526,7 @@ func (s *Service) Scan(roleID string) (ScanResult, error) {
 	}
 	now := s.authoritativeNowLocked(scanner)
 	scannerState := s.stateLocked(scanner, now)
-	if scanner.Status != "alive" {
+	if scanner.Status != RoleAlive {
 		return ScanResult{}, ErrNotAlive
 	}
 	if !scanner.LastScanAt.IsZero() && now.Sub(scanner.LastScanAt) < 5*time.Second {
@@ -482,7 +540,7 @@ func (s *Service) Scan(roleID string) (ScanResult, error) {
 			continue
 		}
 		targetState := s.stateLocked(target, now)
-		if target.Status != "alive" {
+		if target.Status != RoleAlive {
 			continue
 		}
 		targetPosition := positionOfState(targetState)
@@ -491,9 +549,9 @@ func (s *Service) Scan(roleID string) (ScanResult, error) {
 			continue
 		}
 		entry := ScanRole{ID: target.ID, Name: target.Name, Realm: targetState.Realm, Status: targetState.Status, Distance: distance}
+		position := targetState.Position
+		entry.Position = &position
 		if scannerState.RealmLevel > targetState.RealmLevel {
-			position := targetState.Position
-			entry.Position = &position
 			s.appendEventLocked(target, now, "scanned", "被更高境界角色神识扫描", map[string]any{
 				"direction":    direction(targetPosition, scannerPosition),
 				"scanner_name": scanner.Name,
@@ -502,7 +560,7 @@ func (s *Service) Scan(roleID string) (ScanResult, error) {
 		result.Roles = append(result.Roles, entry)
 	}
 	for _, opportunity := range s.opportunities {
-		if opportunity.Status != "unclaimed" {
+		if opportunity.Status != OpportunityUnclaimed {
 			continue
 		}
 		if rules.CanSenseOpportunity(scannerPosition, rules.Units(float64(scannerState.SenseRadius)), opportunity.Position, opportunity.SenseRadius) {
@@ -547,7 +605,7 @@ func (s *Service) Transfer(roleID, targetID, idempotencyKey string, amountMinute
 	now := s.authoritativeNowLocked(sender)
 	senderState := s.stateLocked(sender, now)
 	receiverState := s.stateLocked(receiver, now)
-	if sender.Status != "alive" || receiver.Status != "alive" {
+	if sender.Status != RoleAlive || receiver.Status != RoleAlive {
 		return State{}, ErrNotAlive
 	}
 	if distanceOfStates(senderState, receiverState) > float64(senderState.Speed) {
@@ -606,7 +664,7 @@ func (s *Service) Seize(roleID, targetID, idempotencyKey string) (State, error) 
 	now := s.authoritativeNowLocked(attacker)
 	attackerState := s.stateLocked(attacker, now)
 	targetState := s.stateLocked(target, now)
-	if attacker.Status != "alive" || target.Status != "alive" {
+	if attacker.Status != RoleAlive || target.Status != RoleAlive {
 		return State{}, ErrNotAlive
 	}
 	if attackerState.RealmLevel <= targetState.RealmLevel || attackerState.Position != targetState.Position {
@@ -652,7 +710,7 @@ func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string) (
 	now := s.authoritativeNowLocked(requester)
 	requesterState := s.stateLocked(requester, now)
 	recipientState := s.stateLocked(recipient, now)
-	if requester.Status != "alive" || recipient.Status != "alive" {
+	if requester.Status != RoleAlive || recipient.Status != RoleAlive {
 		return Conversation{}, ErrNotAlive
 	}
 	if distanceOfStates(requesterState, recipientState) > float64(requesterState.SenseRadius) {
@@ -661,7 +719,7 @@ func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string) (
 	s.nextID++
 	id := fmt.Sprintf("conversation_%d", s.nextID)
 	conversation := &Conversation{
-		ID: id, RequesterID: roleID, RecipientID: targetID, Status: "requested",
+		ID: id, RequesterID: roleID, RecipientID: targetID, Status: ConversationRequested,
 		Messages: []ConversationMessage{}, CreatedAt: now.UnixMilli(), UpdatedAt: now.UnixMilli(),
 	}
 	s.conversations[id] = conversation
@@ -687,24 +745,29 @@ func (s *Service) RespondConversation(roleID, conversationID, idempotencyKey, ac
 	if conversation.RecipientID != roleID {
 		return Conversation{}, ErrForbidden
 	}
+	now := s.authoritativeNowLocked(s.roles[roleID])
+	s.stateLocked(s.roles[conversation.RequesterID], now)
+	s.stateLocked(s.roles[conversation.RecipientID], now)
+	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
+		return Conversation{}, ErrNotAlive
+	}
 	commandKey := roleID + "\x00" + idempotencyKey
 	if s.conversationResults[commandKey] != "" {
 		return *conversation, nil
 	}
-	if conversation.Status != "requested" {
+	if conversation.Status != ConversationRequested {
 		return Conversation{}, ErrForbidden
 	}
 	switch action {
 	case "accept":
-		conversation.Status = "accepted"
+		conversation.Status = ConversationAccepted
 	case "reject":
-		conversation.Status = "rejected"
+		conversation.Status = ConversationRejected
 	case "ignore":
-		conversation.Status = "requested"
+		conversation.Status = ConversationRequested
 	default:
 		return Conversation{}, ErrInvalid
 	}
-	now := s.authoritativeNowLocked(s.roles[roleID])
 	conversation.UpdatedAt = now.UnixMilli()
 	s.conversationResults[commandKey] = conversationID
 	s.appendEventLocked(s.roles[conversation.RequesterID], now, "conversation_responded", "交谈请求状态已更新", map[string]any{"conversation_id": conversationID, "status": conversation.Status})
@@ -728,8 +791,14 @@ func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey
 	if !ok {
 		return ConversationMessage{}, ErrNotFound
 	}
-	if conversation.Status != "accepted" || (conversation.RequesterID != roleID && conversation.RecipientID != roleID) {
+	if conversation.Status != ConversationAccepted || (conversation.RequesterID != roleID && conversation.RecipientID != roleID) {
 		return ConversationMessage{}, ErrForbidden
+	}
+	now := s.authoritativeNowLocked(s.roles[roleID])
+	s.stateLocked(s.roles[conversation.RequesterID], now)
+	s.stateLocked(s.roles[conversation.RecipientID], now)
+	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
+		return ConversationMessage{}, ErrNotAlive
 	}
 	commandKey := roleID + "\x00" + idempotencyKey
 	if s.conversationResults[commandKey] != "" {
@@ -739,7 +808,6 @@ func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey
 			}
 		}
 	}
-	now := s.authoritativeNowLocked(s.roles[roleID])
 	s.eventSequence++
 	message := ConversationMessage{ID: s.eventSequence, SenderID: roleID, Content: content, Trusted: false, CreatedAt: now.UnixMilli()}
 	conversation.Messages = append(conversation.Messages, message)
@@ -769,12 +837,17 @@ func (s *Service) CloseConversation(roleID, conversationID, idempotencyKey strin
 	if conversation.RequesterID != roleID && conversation.RecipientID != roleID {
 		return Conversation{}, ErrForbidden
 	}
+	now := s.authoritativeNowLocked(s.roles[roleID])
+	s.stateLocked(s.roles[conversation.RequesterID], now)
+	s.stateLocked(s.roles[conversation.RecipientID], now)
+	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
+		return Conversation{}, ErrNotAlive
+	}
 	commandKey := roleID + "\x00" + idempotencyKey
 	if s.conversationResults[commandKey] != "" {
 		return *conversation, nil
 	}
-	conversation.Status = "closed"
-	now := s.authoritativeNowLocked(s.roles[roleID])
+	conversation.Status = ConversationClosed
 	conversation.UpdatedAt = now.UnixMilli()
 	s.conversationResults[commandKey] = conversationID
 	if err := s.persistLocked(); err != nil {
@@ -844,7 +917,7 @@ func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Pos
 	}
 	now := s.authoritativeNowLocked(role)
 	s.stateLocked(role, now)
-	if role.Status != "pending_reincarnation" {
+	if role.Status != RolePendingReincarnation {
 		return State{}, ErrForbidden
 	}
 	chosen := rules.Position{}
@@ -865,7 +938,7 @@ func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Pos
 		}
 	}
 	role.LifeNumber++
-	role.Status = "alive"
+	role.Status = RoleAlive
 	role.LifeStartedAt = now
 	role.CultivationAt = now
 	role.CultivationBase = 0
@@ -887,6 +960,15 @@ func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Pos
 
 func (s *Service) authoritativeNowLocked(role *Role) time.Time {
 	now := s.clock.Now().UTC()
+	if databaseClock, ok := s.store.(authorityTimeStore); ok {
+		if databaseNow, err := databaseClock.AuthorityNow(context.Background()); err == nil {
+			now = databaseNow.UTC()
+		} else if role != nil {
+			now = role.LastSettledAt
+		} else {
+			now = time.UnixMilli(0).UTC()
+		}
+	}
 	if role != nil && now.Before(role.LastSettledAt) {
 		return role.LastSettledAt
 	}
@@ -894,7 +976,7 @@ func (s *Service) authoritativeNowLocked(role *Role) time.Time {
 }
 
 func (s *Service) cultivationLocked(role *Role, now time.Time) rules.Cultivation {
-	if role.Status != "alive" {
+	if role.Status != RoleAlive {
 		return 0
 	}
 	elapsed := now.Sub(role.CultivationAt)
@@ -902,7 +984,7 @@ func (s *Service) cultivationLocked(role *Role, now time.Time) rules.Cultivation
 		elapsed = 0
 	}
 	cultivation := role.CultivationBase + rules.Cultivation(elapsed.Milliseconds())
-	if opportunity := s.opportunities[role.BoundOpportunityID]; opportunity != nil && opportunity.Status == "bound" {
+	if opportunity := s.opportunities[role.BoundOpportunityID]; opportunity != nil && opportunity.Status == OpportunityBound {
 		converted := rules.ConvertedCultivation(opportunity.Cultivation, now.Sub(opportunity.BoundAt))
 		if converted > opportunity.Credited {
 			cultivation += converted - opportunity.Credited
@@ -918,8 +1000,8 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 		age = 0
 	}
 	position := role.Position
-	movementState := "idle"
-	if role.Status == "alive" && role.Trajectory != nil {
+	movementState := MovementIdle
+	if role.Status == RoleAlive && role.Trajectory != nil {
 		var arrived bool
 		travelled := rules.NaturalTravelDistance(role.TrajectoryCultivation, now.Sub(role.Trajectory.StartedAt))
 		position, arrived = role.Trajectory.PositionAfterDistance(travelled)
@@ -929,18 +1011,16 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 			role.TrajectoryCultivation = 0
 			role.StateVersion++
 			s.expandBoundsLocked(position)
+			s.appendEventLocked(role, now, "movement_arrived", "已抵达目标位置", map[string]any{"x": position.X.Units(), "y": position.Y.Units()})
 		} else {
-			movementState = "moving"
+			movementState = MovementMoving
 			s.expandBoundsLocked(position)
 		}
 	}
-	if role.Status == "alive" {
-		s.claimOpportunityLocked(role, position, now)
-		cultivation = s.cultivationLocked(role, now)
-	}
 	life := rules.DeriveLife(cultivation, age)
-	for role.Status == "alive" && !role.NextDeathAt.IsZero() && !now.Before(role.NextDeathAt) {
+	for role.Status == RoleAlive && !role.NextDeathAt.IsZero() && !now.Before(role.NextDeathAt) {
 		deathAt := role.NextDeathAt
+		s.settleOpportunityLocked(role, deathAt)
 		deathCultivation := s.cultivationLocked(role, deathAt)
 		deathAge := deathAt.Sub(role.LifeStartedAt)
 		if rules.DeriveLife(deathCultivation, deathAge).Alive {
@@ -957,9 +1037,15 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 		age = 0
 		life = rules.DeriveLife(0, 0)
 		position = deathPosition
-		movementState = "idle"
+		movementState = MovementIdle
 	}
-	if role.Status != "alive" {
+	if role.Status == RoleAlive {
+		s.claimOpportunityLocked(role, position, now)
+		s.settleOpportunityLocked(role, now)
+		cultivation = s.cultivationLocked(role, now)
+		life = rules.DeriveLife(cultivation, age)
+	}
+	if role.Status != RoleAlive {
 		cultivation = 0
 		age = 0
 		life = rules.DeriveLife(0, 0)
@@ -994,22 +1080,23 @@ func (s *Service) claimOpportunityLocked(role *Role, position rules.Position, no
 	sort.Strings(ids)
 	for _, id := range ids {
 		opportunity := s.opportunities[id]
-		if opportunity.Status != "unclaimed" || opportunity.Position != position {
+		if opportunity.Status != OpportunityUnclaimed || opportunity.Position != position {
 			continue
 		}
-		opportunity.Status = "bound"
+		opportunity.Status = OpportunityBound
 		opportunity.BoundRoleID = role.ID
 		opportunity.BoundAt = now
 		role.BoundOpportunityID = id
 		role.StateVersion++
 		s.appendEventLocked(role, now, "opportunity_claimed", "觅得机缘", map[string]any{"opportunity_id": id})
+		s.appendEventLocked(role, now, "opportunity_converting", "参悟机缘", map[string]any{"opportunity_id": id})
 		return
 	}
 }
 
 func (s *Service) settleOpportunityLocked(role *Role, now time.Time) {
 	opportunity := s.opportunities[role.BoundOpportunityID]
-	if opportunity == nil || opportunity.Status != "bound" {
+	if opportunity == nil || opportunity.Status != OpportunityBound {
 		return
 	}
 	converted := rules.ConvertedCultivation(opportunity.Cultivation, now.Sub(opportunity.BoundAt))
@@ -1018,17 +1105,17 @@ func (s *Service) settleOpportunityLocked(role *Role, now time.Time) {
 		opportunity.Credited = converted
 	}
 	if converted == opportunity.Cultivation {
-		opportunity.Status = "consumed"
+		opportunity.Status = OpportunityConsumed
 		role.BoundOpportunityID = ""
 		s.appendEventLocked(role, now, "opportunity_converted", "参悟机缘", map[string]any{"cultivation": converted.Points()})
 	}
 }
 
 func (s *Service) killLocked(role *Role, at time.Time, cultivation rules.Cultivation, position rules.Position, cause string, createOpportunity bool) {
-	if role.Status != "alive" {
+	if role.Status != RoleAlive {
 		return
 	}
-	role.Status = "pending_reincarnation"
+	role.Status = RolePendingReincarnation
 	role.CultivationBase = 0
 	role.CultivationAt = at
 	role.Position = position
@@ -1037,8 +1124,9 @@ func (s *Service) killLocked(role *Role, at time.Time, cultivation rules.Cultiva
 	role.NextDeathAt = time.Time{}
 	role.StateVersion++
 	s.expandBoundsLocked(position)
+	s.closeConversationsForDeathLocked(role, at)
 	if opportunity := s.opportunities[role.BoundOpportunityID]; opportunity != nil {
-		opportunity.Status = "discarded"
+		opportunity.Status = OpportunityDiscarded
 		opportunity.BoundRoleID = ""
 		role.BoundOpportunityID = ""
 	}
@@ -1046,16 +1134,20 @@ func (s *Service) killLocked(role *Role, at time.Time, cultivation rules.Cultiva
 	if createOpportunity && cultivation > 0 {
 		s.nextID++
 		opportunityID := fmt.Sprintf("opportunity_%d", s.nextID)
-		s.opportunities[opportunityID] = &Opportunity{
-			ID: opportunityID, Position: rules.Position{X: s.minX, Y: s.minY},
-			Cultivation: cultivation, SenseRadius: rules.Units(1), Status: "unclaimed",
+		level := rules.RealmFor(cultivation).Level
+		radius := rules.RealmFor(cultivation).SenseRadius
+		opportunity := &Opportunity{
+			ID: opportunityID, Position: position, DeathPosition: position, Level: level,
+			Cultivation: cultivation, SenseRadius: rules.Units(float64(radius)), Status: OpportunityUnplaced,
 		}
+		s.opportunities[opportunityID] = opportunity
+		s.placeOpportunityLocked(opportunity)
 		data["opportunity_created"] = true
 	}
 	s.appendEventLocked(role, at, "death", "本世身死，等待转世", data)
 }
 
-func (s *Service) appendEventLocked(role *Role, at time.Time, eventType, message string, data map[string]any) {
+func (s *Service) appendEventLocked(role *Role, at time.Time, eventType EventType, message string, data map[string]any) {
 	s.eventSequence++
 	s.events[role.ID] = append(s.events[role.ID], Event{
 		ID: s.eventSequence, Type: eventType, Message: message, CreatedAt: at.UnixMilli(), LifeNumber: role.LifeNumber, Data: data,
@@ -1063,18 +1155,71 @@ func (s *Service) appendEventLocked(role *Role, at time.Time, eventType, message
 }
 
 func (s *Service) expandBoundsLocked(position rules.Position) {
+	changed := false
 	if position.X < s.minX {
 		s.minX = position.X
+		changed = true
 	}
 	if position.X > s.maxX {
 		s.maxX = position.X
+		changed = true
 	}
 	if position.Y < s.minY {
 		s.minY = position.Y
+		changed = true
 	}
 	if position.Y > s.maxY {
 		s.maxY = position.Y
+		changed = true
 	}
+	if changed {
+		s.placeUnplacedOpportunitiesLocked()
+	}
+}
+
+func (s *Service) closeConversationsForDeathLocked(role *Role, at time.Time) {
+	for _, conversation := range s.conversations {
+		if conversation.Status == ConversationClosed || conversation.Status == ConversationRejected {
+			continue
+		}
+		if conversation.RequesterID != role.ID && conversation.RecipientID != role.ID {
+			continue
+		}
+		conversation.Status = ConversationClosed
+		conversation.UpdatedAt = at.UnixMilli()
+		otherID := conversation.RequesterID
+		if otherID == role.ID {
+			otherID = conversation.RecipientID
+		}
+		if other := s.roles[otherID]; other != nil {
+			s.appendEventLocked(other, at, "conversation_closed", "交谈因对方本世结束而关闭", map[string]any{"conversation_id": conversation.ID})
+		}
+	}
+}
+
+func (s *Service) placeUnplacedOpportunitiesLocked() {
+	ids := make([]string, 0, len(s.opportunities))
+	for id, opportunity := range s.opportunities {
+		if opportunity.Status == OpportunityUnplaced {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		s.placeOpportunityLocked(s.opportunities[id])
+	}
+}
+
+func (s *Service) placeOpportunityLocked(opportunity *Opportunity) {
+	if opportunity == nil || opportunity.Status != OpportunityUnplaced {
+		return
+	}
+	position, ok := randomPositionExcluding(s.minX, s.maxX, s.minY, s.maxY, opportunity.DeathPosition)
+	if !ok {
+		return
+	}
+	opportunity.Position = position
+	opportunity.Status = OpportunityUnclaimed
 }
 
 func positionOfState(state State) rules.Position {
@@ -1134,114 +1279,6 @@ func sortScan(roles []ScanRole, opportunities []OpportunitySignal) {
 	})
 }
 
-type snapshotAccount struct {
-	PasswordHash []byte `json:"password_hash"`
-	RoleID       string `json:"role_id"`
-}
-
-type snapshotSession struct {
-	RoleID    string    `json:"role_id"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
-
-type serviceSnapshot struct {
-	Accounts            map[string]snapshotAccount  `json:"accounts"`
-	RoleNames           map[string]string           `json:"role_names"`
-	Roles               map[string]*Role            `json:"roles"`
-	Sessions            map[string]snapshotSession  `json:"sessions"`
-	Idempotency         map[string]map[string]State `json:"idempotency"`
-	Events              map[string][]Event          `json:"events"`
-	Opportunities       map[string]*Opportunity     `json:"opportunities"`
-	Conversations       map[string]*Conversation    `json:"conversations"`
-	ConversationResults map[string]string           `json:"conversation_results"`
-	EventSequence       int64                       `json:"event_sequence"`
-	MinX                rules.Coordinate            `json:"min_x"`
-	MaxX                rules.Coordinate            `json:"max_x"`
-	MinY                rules.Coordinate            `json:"min_y"`
-	MaxY                rules.Coordinate            `json:"max_y"`
-	NextID              uint64                      `json:"next_id"`
-}
-
-func (s *Service) persistLocked() error {
-	if s.store == nil {
-		return nil
-	}
-	accounts := make(map[string]snapshotAccount, len(s.accounts))
-	for name, value := range s.accounts {
-		accounts[name] = snapshotAccount{PasswordHash: value.passwordHash, RoleID: value.roleID}
-	}
-	sessions := make(map[string]snapshotSession, len(s.sessions))
-	for hash, value := range s.sessions {
-		sessions[hex.EncodeToString(hash[:])] = snapshotSession{RoleID: value.RoleID, ExpiresAt: value.ExpiresAt}
-	}
-	payload, err := json.Marshal(serviceSnapshot{
-		Accounts: accounts, RoleNames: s.roleNames, Roles: s.roles, Sessions: sessions,
-		Idempotency: s.idempotency, Events: s.events, Opportunities: s.opportunities,
-		Conversations: s.conversations, ConversationResults: s.conversationResults,
-		EventSequence: s.eventSequence, MinX: s.minX, MaxX: s.maxX, MinY: s.minY, MaxY: s.maxY, NextID: s.nextID,
-	})
-	if err != nil {
-		return fmt.Errorf("encode world snapshot: %w", err)
-	}
-	if err := s.store.Save(context.Background(), payload); err != nil {
-		return fmt.Errorf("persist world snapshot: %w", err)
-	}
-	return nil
-}
-
-func (s *Service) restoreLocked(payload []byte) error {
-	var snapshot serviceSnapshot
-	if err := json.Unmarshal(payload, &snapshot); err != nil {
-		return err
-	}
-	s.accounts = make(map[string]account, len(snapshot.Accounts))
-	for name, value := range snapshot.Accounts {
-		s.accounts[name] = account{passwordHash: value.PasswordHash, roleID: value.RoleID}
-	}
-	s.sessions = make(map[[32]byte]session, len(snapshot.Sessions))
-	for encoded, value := range snapshot.Sessions {
-		decoded, err := hex.DecodeString(encoded)
-		if err != nil || len(decoded) != sha256.Size {
-			return fmt.Errorf("invalid stored session hash")
-		}
-		var hash [32]byte
-		copy(hash[:], decoded)
-		s.sessions[hash] = session{RoleID: value.RoleID, ExpiresAt: value.ExpiresAt}
-	}
-	s.roleNames = snapshot.RoleNames
-	s.roles = snapshot.Roles
-	s.idempotency = snapshot.Idempotency
-	s.events = snapshot.Events
-	s.opportunities = snapshot.Opportunities
-	s.conversations = snapshot.Conversations
-	s.conversationResults = snapshot.ConversationResults
-	s.eventSequence = snapshot.EventSequence
-	s.minX, s.maxX, s.minY, s.maxY = snapshot.MinX, snapshot.MaxX, snapshot.MinY, snapshot.MaxY
-	s.nextID = snapshot.NextID
-	if s.roleNames == nil {
-		s.roleNames = make(map[string]string)
-	}
-	if s.roles == nil {
-		s.roles = make(map[string]*Role)
-	}
-	if s.idempotency == nil {
-		s.idempotency = make(map[string]map[string]State)
-	}
-	if s.events == nil {
-		s.events = make(map[string][]Event)
-	}
-	if s.opportunities == nil {
-		s.opportunities = make(map[string]*Opportunity)
-	}
-	if s.conversations == nil {
-		s.conversations = make(map[string]*Conversation)
-	}
-	if s.conversationResults == nil {
-		s.conversationResults = make(map[string]string)
-	}
-	return nil
-}
-
 func (s *Service) idempotencyResultLocked(roleID, key string) (State, bool) {
 	results := s.idempotency[roleID]
 	if results == nil {
@@ -1277,4 +1314,27 @@ func randomCoordinate(minimum, maximum rules.Coordinate) (rules.Coordinate, erro
 		return 0, fmt.Errorf("generate random coordinate: %w", err)
 	}
 	return minimum + rules.Coordinate(value.Int64()), nil
+}
+
+func randomPositionExcluding(minX, maxX, minY, maxY rules.Coordinate, excluded rules.Position) (rules.Position, bool) {
+	if minX == maxX && minY == maxY {
+		return rules.Position{}, false
+	}
+	for range 16 {
+		x, errX := randomCoordinate(minX, maxX)
+		y, errY := randomCoordinate(minY, maxY)
+		if errX != nil || errY != nil {
+			break
+		}
+		candidate := rules.Position{X: x, Y: y}
+		if candidate != excluded {
+			return candidate, true
+		}
+	}
+	for _, candidate := range []rules.Position{{X: minX, Y: minY}, {X: minX, Y: maxY}, {X: maxX, Y: minY}, {X: maxX, Y: maxY}} {
+		if candidate != excluded {
+			return candidate, true
+		}
+	}
+	return rules.Position{}, false
 }

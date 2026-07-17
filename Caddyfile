@@ -7,6 +7,10 @@ http://localhost, https://localhost {
         }
     }
 
+    handle /xiuxian.v1.WorldService/* {
+        reverse_proxy game-server:8080
+    }
+
     handle /mcp {
         reverse_proxy mcp-gateway:8090
     }

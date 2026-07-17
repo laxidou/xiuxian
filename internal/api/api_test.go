@@ -20,6 +20,15 @@ type memoryDurableStore struct {
 	payload []byte
 }
 
+type timedDurableStore struct {
+	memoryDurableStore
+	now time.Time
+}
+
+func (s *timedDurableStore) AuthorityNow(context.Context) (time.Time, error) {
+	return s.now, nil
+}
+
 func (s *memoryDurableStore) Load(context.Context) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -85,9 +94,24 @@ func newServer(t *testing.T) (*httptest.Server, *world.ManualClock) {
 	t.Helper()
 	clock := world.NewManualClock(time.UnixMilli(1_700_000_000_000))
 	service := world.NewService(clock)
-	server := httptest.NewServer(api.NewHandler(service, api.Options{AllowTestClock: true}))
+	server := httptest.NewServer(api.NewHandler(service, api.Options{AllowTestClock: true, Version: "test-version"}))
 	t.Cleanup(server.Close)
 	return server, clock
+}
+
+func TestPublicHealthReportsAuthorityVersion(t *testing.T) {
+	server, _ := newServer(t)
+	response, err := http.Get(server.URL + "/api/v1/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("health status = %d, want 200", response.StatusCode)
+	}
+	health := decode[map[string]string](t, response)
+	if health["status"] != "ok" || health["service"] != "game-server" || health["version"] != "test-version" {
+		t.Fatalf("health response = %#v", health)
+	}
 }
 
 func TestRegistrationCreatesOnePermanentRoleAndSecureSession(t *testing.T) {
@@ -117,6 +141,11 @@ func TestRegistrationCreatesOnePermanentRoleAndSecureSession(t *testing.T) {
 		t.Fatalf("authenticated state status = %d, want 200", me.StatusCode)
 	}
 	_ = decode[map[string]any](t, me)
+	contract := client.request(t, http.MethodPost, "/xiuxian.v1.WorldService/GetState", map[string]any{}, nil)
+	contractState := decode[map[string]any](t, contract)
+	if contractState["name"] != "青玄" || contractState["realmName"] != "凡人" {
+		t.Fatalf("generated contract state = %#v", contractState)
+	}
 }
 
 func TestConcurrentDuplicateRoleNameHasExactlyOneWinner(t *testing.T) {
@@ -178,6 +207,10 @@ func TestWorldTimeAndMovementAreDerivedWithoutTickWrites(t *testing.T) {
 	if position["x"] != float64(3) || position["y"] != float64(4) || state["movement_state"] != "idle" {
 		t.Fatalf("position/movement = %#v / %v, want exact target and idle", position, state["movement_state"])
 	}
+	events := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	if len(events) != 1 || events[0].(map[string]any)["type"] != "movement_arrived" {
+		t.Fatalf("arrival event = %#v", events)
+	}
 }
 
 func TestScanTransferAndSeizureShareAuthoritativeState(t *testing.T) {
@@ -213,6 +246,11 @@ func TestScanTransferAndSeizureShareAuthoritativeState(t *testing.T) {
 	events := decode[map[string]any](t, eventsResp)["events"].([]any)
 	if len(events) != 1 || events[0].(map[string]any)["type"] != "scanned" {
 		t.Fatalf("lower role scan notice = %#v", events)
+	}
+	lowScan := decode[map[string]any](t, low.request(t, http.MethodPost, "/api/v1/scan", map[string]any{}, nil))
+	lowRoles := lowScan["roles"].([]any)
+	if len(lowRoles) != 1 || lowRoles[0].(map[string]any)["position"] == nil {
+		t.Fatalf("lower-realm role should identify an in-range higher role precisely: %#v", lowRoles)
 	}
 
 	transferBody := map[string]any{"target_id": lowState["id"], "amount_minutes": 1}
@@ -357,6 +395,28 @@ func TestAcknowledgedStateSurvivesAuthorityRestart(t *testing.T) {
 	}
 }
 
+func TestPersistentAuthorityUsesDatabaseTimeInsteadOfProcessClock(t *testing.T) {
+	processClock := world.NewManualClock(time.UnixMilli(1_700_000_000_000))
+	store := &timedDurableStore{now: processClock.Now()}
+	service, err := world.NewPersistentService(context.Background(), processClock, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(api.NewHandler(service, api.Options{}))
+	defer server.Close()
+	client := &testClient{baseURL: server.URL}
+	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "db-clock", "password": "a sufficiently long password", "role_name": "时官",
+	}, nil)
+	registered.Body.Close()
+	processClock.Advance(10 * time.Minute)
+	store.now = store.now.Add(2 * time.Minute)
+	state := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	if state["cultivation"] != float64(2) {
+		t.Fatalf("cultivation = %v, want 2 from database time (not 10 from process time)", state["cultivation"])
+	}
+}
+
 func TestConversationLifecycleKeepsPlayerMessagesUntrusted(t *testing.T) {
 	server, _ := newServer(t)
 	requester := &testClient{baseURL: server.URL}
@@ -405,6 +465,35 @@ func TestConversationLifecycleKeepsPlayerMessagesUntrusted(t *testing.T) {
 	closed.Body.Close()
 }
 
+func TestConversationClosesWhenParticipantDies(t *testing.T) {
+	server, clock := newServer(t)
+	requester := &testClient{baseURL: server.URL}
+	response := requester.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "mortal-speaker", "password": "a sufficiently long password", "role_name": "将别者",
+	}, nil)
+	response.Body.Close()
+	recipient := &testClient{baseURL: server.URL}
+	response = recipient.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "mortal-listener", "password": "a sufficiently long password", "role_name": "送行者",
+	}, nil)
+	recipientState := decode[map[string]any](t, response)
+
+	requested := requester.request(t, http.MethodPost, "/api/v1/conversations", map[string]any{"target_id": recipientState["id"]}, map[string]string{"Idempotency-Key": "death-conversation"})
+	conversation := decode[map[string]any](t, requested)
+	conversationID := conversation["id"].(string)
+	accepted := recipient.request(t, http.MethodPost, "/api/v1/conversations/"+conversationID+"/respond", map[string]any{"action": "accept"}, map[string]string{"Idempotency-Key": "death-conversation-accept"})
+	accepted.Body.Close()
+
+	clock.Advance(8 * time.Hour)
+	stateAfterDeadline := recipient.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	stateAfterDeadline.Body.Close()
+	list := decode[map[string]any](t, requester.request(t, http.MethodGet, "/api/v1/conversations", nil, nil))
+	items := list["conversations"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["status"] != "closed" {
+		t.Fatalf("conversation after participant death = %#v, want closed", items)
+	}
+}
+
 func TestOpportunityClaimsAtExactCoordinateAndConvertsLinearly(t *testing.T) {
 	server, clock := newServer(t)
 	client := &testClient{baseURL: server.URL}
@@ -412,17 +501,13 @@ func TestOpportunityClaimsAtExactCoordinateAndConvertsLinearly(t *testing.T) {
 		"account": "finder", "password": "a sufficiently long password", "role_name": "寻缘人",
 	}, nil)
 	registered.Body.Close()
-	move := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "first-life-explore"})
+	move := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 0.001, "y": 0}, map[string]string{"Idempotency-Key": "first-life-move"})
 	move.Body.Close()
 	clock.Advance(8 * time.Hour)
 	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
 	dead.Body.Close()
-	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "second-life"})
+	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 0, "y": 0}, map[string]string{"Idempotency-Key": "second-life"})
 	reborn.Body.Close()
-
-	seek := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 0, "y": 0}, map[string]string{"Idempotency-Key": "seek-opportunity"})
-	seek.Body.Close()
-	clock.Advance(time.Second)
 	claimed := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
 	claimed.Body.Close()
 	events := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
@@ -438,7 +523,7 @@ func TestOpportunityClaimsAtExactCoordinateAndConvertsLinearly(t *testing.T) {
 
 	clock.Advance(6 * time.Hour)
 	state := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	want := 480.0 + 1.0/60.0
+	want := 480.0
 	if math.Abs(state["cultivation"].(float64)-want) > 0.000001 {
 		t.Fatalf("cultivation after 6h natural + quarter opportunity = %v, want %v", state["cultivation"], want)
 	}
