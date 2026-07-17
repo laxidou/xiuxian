@@ -53,7 +53,7 @@ npm run typecheck
 npm run build
 ```
 
-完整验收（Go、Web、契约可复现、Compose 与故障恢复冒烟）：
+完整验收（Go、Web、契约可复现、Compose、故障恢复，以及桌面/移动 Chrome 自动化）：
 
 ```bash
 scripts/check.sh
@@ -93,6 +93,7 @@ POST https://localhost/mcp
 - `internal/rules`：纯规则 worked examples，包括突破/寿尽同毫秒、动态速度、传功边界、组合感应半径和机缘转化。
 - `internal/server`：公开 HTTP 黑盒场景、Kratos 生成资源路由、Health/SSE 辅助路由，以及旧 `/api/v1/*` 返回 404 的传输测试。
 - `cmd/mcp-gateway`：MCP 工具发现与 authority 代理行为。
+- `scripts/smoke-web-browser.sh`：用系统 Chrome 在桌面与移动视口自动完成注册/登录、状态查看、移动、扫描、交谈、MCP Key 轮换/撤销、寿尽和转世；测试时钟只在该脚本显式启用，正常运行时端点返回 404。
 
 完整 Compose 冒烟应确认 `world_snapshots` 存在一行，并且 `outbox` 行最终被 Worker 标记完成。
 

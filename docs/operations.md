@@ -41,8 +41,12 @@ scripts/smoke-compose.sh
 | `COOKIE_SECURE` | game-server | 生产必须保持 `true` |
 | `WORKER_TOKEN` | game-server、worker | 内部寿尽结算鉴权；两端必须一致 |
 | `APP_VERSION` | game-server | Web 健康状态展示的版本文本 |
+| `ALLOW_TEST_CLOCK` | game-server | 仅自动化验收可设为 `true`；正常与生产环境必须为 `false` |
+| `TEST_CLOCK_START_UNIX_MILLIS` | game-server | 可控时钟的可选 UTC 毫秒起点；仅在测试时钟启用时生效 |
 
 生产环境必须替换 Compose 示例中的数据库密码和 Worker Token，并通过 HTTPS 暴露 Web/API/MCP。MCP Key 只在轮换时显示一次，数据库仅保存摘要。
+
+`scripts/check.sh` 的浏览器阶段需要系统 Chrome（也可用 `CHROME_BIN` 指定兼容 Chromium）。脚本会临时重建 game-server 以启用可控时钟，完成后强制恢复系统时钟配置，并验证测试端点重新返回 404。
 
 ## 健康检查
 

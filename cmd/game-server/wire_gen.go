@@ -26,7 +26,8 @@ func wireApp(config *conf.Config, logger log.Logger) (*kratos.App, func(), error
 		return nil, nil, err
 	}
 	worldRepository := data.NewWorldRepository(dataData)
-	bizService, err := biz.NewWorldAuthority(worldRepository)
+	clock := provideWorldClock(confServer)
+	bizService, err := biz.NewWorldAuthority(worldRepository, clock)
 	if err != nil {
 		cleanup()
 		return nil, nil, err

@@ -2,12 +2,14 @@ package main
 
 import (
 	"os"
+	"time"
 
 	"github.com/go-kratos/kratos/v2"
 	"github.com/go-kratos/kratos/v2/log"
 	kratosgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 
+	"xiuxian/internal/biz"
 	"xiuxian/internal/conf"
 )
 
@@ -34,6 +36,17 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.NewHelper(logger).Fatal(err)
 	}
+}
+
+func provideWorldClock(config *conf.Server) biz.Clock {
+	if !config.AllowTestClock {
+		return biz.SystemClock{}
+	}
+	start := time.Now().UTC()
+	if config.TestClockStartMillis > 0 {
+		start = time.UnixMilli(config.TestClockStartMillis).UTC()
+	}
+	return biz.NewManualClock(start)
 }
 
 func newApp(config *conf.Config, logger log.Logger, httpServer *kratoshttp.Server, grpcServer *kratosgrpc.Server) *kratos.App {

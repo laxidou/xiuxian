@@ -20,6 +20,7 @@ func wireApp(*conf.Config, log.Logger) (*kratos.App, func(), error) {
 		biz.ProviderSet,
 		service.ProviderSet,
 		server.ProviderSet,
+		provideWorldClock,
 		newApp,
 	))
 }

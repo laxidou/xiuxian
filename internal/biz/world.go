@@ -44,10 +44,21 @@ type WorldAuthority interface {
 	Reincarnate(context.Context, string, string, *rules.Position, CommandExpectation) (State, error)
 }
 
-func NewWorldAuthority(repository WorldRepository) (*Service, error) {
+type repositoryWithoutAuthorityTime struct {
+	WorldRepository
+}
+
+func NewWorldAuthority(repository WorldRepository, clock Clock) (*Service, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return NewPersistentService(ctx, SystemClock{}, repository)
+	if clock == nil {
+		clock = SystemClock{}
+	}
+	store := repository
+	if _, ok := clock.(*ManualClock); ok {
+		store = repositoryWithoutAuthorityTime{WorldRepository: repository}
+	}
+	return NewPersistentService(ctx, clock, store)
 }
 
 // WorldUsecase is the application boundary shared by HTTP and gRPC transports.

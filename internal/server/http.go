@@ -16,8 +16,9 @@ import (
 
 func NewAuxiliaryHTTPHandler(usecase *biz.WorldUsecase, limiter biz.RateLimiter, health biz.DependencyHealthChecker, config *conf.Server) http.Handler {
 	return service.NewAuxiliaryHTTPHandler(usecase, limiter, service.AuxiliaryHTTPOptions{
-		WorkerToken: config.WorkerToken,
-		Version:     config.Version,
+		AllowTestClock: config.AllowTestClock,
+		WorkerToken:    config.WorkerToken,
+		Version:        config.Version,
 	}, health)
 }
 

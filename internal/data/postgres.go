@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -135,9 +137,17 @@ func (s *PostgresSnapshotStore) Load(ctx context.Context) ([]byte, error) {
 func (s *PostgresSnapshotStore) Save(ctx context.Context, payload []byte) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var currentVersion int64
-		err := tx.Raw(`SELECT state_version FROM world_snapshots WHERE id = 1 FOR UPDATE`).Row().Scan(&currentVersion)
+		var currentPayload []byte
+		err := tx.Raw(`SELECT payload, state_version FROM world_snapshots WHERE id = 1 FOR UPDATE`).Row().Scan(&currentPayload, &currentVersion)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("lock world authority: %w", err)
+		}
+		roleIDs, err := changedRoleIDs(currentPayload, payload)
+		if err != nil {
+			return err
+		}
+		if err := lockRoleRows(tx, roleIDs); err != nil {
+			return err
 		}
 		var version int64
 		err = tx.Raw(`
@@ -163,6 +173,63 @@ func (s *PostgresSnapshotStore) Save(ctx context.Context, payload []byte) error 
 		}
 		return nil
 	})
+}
+
+func changedRoleIDs(currentPayload, nextPayload []byte) ([]string, error) {
+	current := persistedWorld{Roles: map[string]persistedRole{}}
+	if len(currentPayload) > 0 {
+		if err := json.Unmarshal(currentPayload, &current); err != nil {
+			return nil, fmt.Errorf("decode current world state for role locks: %w", err)
+		}
+	}
+	var next persistedWorld
+	if err := json.Unmarshal(nextPayload, &next); err != nil {
+		return nil, fmt.Errorf("decode next world state for role locks: %w", err)
+	}
+	changed := make([]string, 0)
+	for id, role := range next.Roles {
+		previous, exists := current.Roles[id]
+		if !exists || previous.StateVersion != role.StateVersion {
+			changed = append(changed, id)
+		}
+	}
+	for id := range current.Roles {
+		if _, exists := next.Roles[id]; !exists {
+			changed = append(changed, id)
+		}
+	}
+	sort.Strings(changed)
+	return changed, nil
+}
+
+func lockRoleRows(tx *gorm.DB, roleIDs []string) error {
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(roleIDs))
+	arguments := make([]any, len(roleIDs))
+	for index, roleID := range roleIDs {
+		placeholders[index] = fmt.Sprintf("$%d", index+1)
+		arguments[index] = roleID
+	}
+	rows, err := tx.Raw(
+		`SELECT id FROM roles WHERE id IN (`+strings.Join(placeholders, ",")+`) ORDER BY id FOR UPDATE`,
+		arguments...,
+	).Rows()
+	if err != nil {
+		return fmt.Errorf("lock changed roles: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var roleID string
+		if err := rows.Scan(&roleID); err != nil {
+			return fmt.Errorf("read locked role: %w", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate locked roles: %w", err)
+	}
+	return nil
 }
 
 func mirrorNormalizedState(ctx context.Context, tx *gorm.DB, payload []byte) error {

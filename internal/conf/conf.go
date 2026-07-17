@@ -2,6 +2,7 @@ package conf
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -12,13 +13,15 @@ type Config struct {
 }
 
 type Server struct {
-	HTTPAddress  string
-	GRPCAddress  string
-	HTTPTimeout  time.Duration
-	GRPCTimeout  time.Duration
-	SecureCookie bool
-	WorkerToken  string
-	Version      string
+	HTTPAddress          string
+	GRPCAddress          string
+	HTTPTimeout          time.Duration
+	GRPCTimeout          time.Duration
+	SecureCookie         bool
+	WorkerToken          string
+	Version              string
+	AllowTestClock       bool
+	TestClockStartMillis int64
 }
 
 type Data struct {
@@ -35,19 +38,26 @@ func Load() *Config {
 	}
 	return &Config{
 		Server: Server{
-			HTTPAddress:  httpAddress,
-			GRPCAddress:  grpcAddress,
-			HTTPTimeout:  30 * time.Second,
-			GRPCTimeout:  30 * time.Second,
-			SecureCookie: os.Getenv("COOKIE_SECURE") != "false",
-			WorkerToken:  os.Getenv("WORKER_TOKEN"),
-			Version:      version,
+			HTTPAddress:          httpAddress,
+			GRPCAddress:          grpcAddress,
+			HTTPTimeout:          30 * time.Second,
+			GRPCTimeout:          30 * time.Second,
+			SecureCookie:         os.Getenv("COOKIE_SECURE") != "false",
+			WorkerToken:          os.Getenv("WORKER_TOKEN"),
+			Version:              version,
+			AllowTestClock:       os.Getenv("ALLOW_TEST_CLOCK") == "true",
+			TestClockStartMillis: envInt64("TEST_CLOCK_START_UNIX_MILLIS"),
 		},
 		Data: Data{
 			DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
 			RedisURL:    strings.TrimSpace(os.Getenv("REDIS_URL")),
 		},
 	}
+}
+
+func envInt64(key string) int64 {
+	value, _ := strconv.ParseInt(strings.TrimSpace(os.Getenv(key)), 10, 64)
+	return value
 }
 
 func ProvideServer(config *Config) *Server { return &config.Server }

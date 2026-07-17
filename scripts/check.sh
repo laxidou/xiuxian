@@ -23,3 +23,4 @@ go vet ./...
 scripts/check-generated.sh
 docker compose config --quiet
 scripts/smoke-compose.sh
+scripts/smoke-web-browser.sh

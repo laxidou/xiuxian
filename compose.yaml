@@ -46,6 +46,8 @@ services:
       COOKIE_SECURE: "false"
       WORKER_TOKEN: xiuxian-local-worker-token
       APP_VERSION: local-compose
+      ALLOW_TEST_CLOCK: ${ALLOW_TEST_CLOCK:-false}
+      TEST_CLOCK_START_UNIX_MILLIS: ${TEST_CLOCK_START_UNIX_MILLIS:-0}
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

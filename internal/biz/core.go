@@ -736,7 +736,7 @@ func (s *Service) RequestConversation(ctx context.Context, roleID, targetID, ide
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	commandKey := roleID + "\x00" + idempotencyKey
+	commandKey := conversationCommandKey(roleID, idempotencyKey)
 	if existingID := s.conversationResults[commandKey]; existingID != "" {
 		return *s.conversations[existingID], nil
 	}
@@ -798,7 +798,7 @@ func (s *Service) RespondConversation(ctx context.Context, roleID, conversationI
 	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
 		return Conversation{}, ErrNotAlive
 	}
-	commandKey := roleID + "\x00" + idempotencyKey
+	commandKey := conversationCommandKey(roleID, idempotencyKey)
 	if s.conversationResults[commandKey] != "" {
 		return *conversation, nil
 	}
@@ -850,7 +850,7 @@ func (s *Service) SendConversationMessage(ctx context.Context, roleID, conversat
 	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
 		return ConversationMessage{}, ErrNotAlive
 	}
-	commandKey := roleID + "\x00" + idempotencyKey
+	commandKey := conversationCommandKey(roleID, idempotencyKey)
 	if s.conversationResults[commandKey] != "" {
 		for i := len(conversation.Messages) - 1; i >= 0; i-- {
 			if conversation.Messages[i].SenderID == roleID {
@@ -896,7 +896,7 @@ func (s *Service) CloseConversation(ctx context.Context, roleID, conversationID,
 	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
 		return Conversation{}, ErrNotAlive
 	}
-	commandKey := roleID + "\x00" + idempotencyKey
+	commandKey := conversationCommandKey(roleID, idempotencyKey)
 	if s.conversationResults[commandKey] != "" {
 		return *conversation, nil
 	}
@@ -1389,6 +1389,11 @@ func newToken() (string, [32]byte, error) {
 	}
 	token := base64.RawURLEncoding.EncodeToString(buffer)
 	return token, sha256.Sum256([]byte(token)), nil
+}
+
+func conversationCommandKey(roleID, idempotencyKey string) string {
+	digest := sha256.Sum256([]byte(roleID + "\x00" + idempotencyKey))
+	return base64.RawURLEncoding.EncodeToString(digest[:])
 }
 
 func randomCoordinate(minimum, maximum rules.Coordinate) (rules.Coordinate, error) {

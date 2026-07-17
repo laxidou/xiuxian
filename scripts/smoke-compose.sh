@@ -42,6 +42,7 @@ until curl -fsS "$base_url/healthz" | jq -e '.status == "ok" and .service == "ga
 done
 
 [ "$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/api/v1/state")" = "404" ]
+[ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$base_url/test/clock/advance?milliseconds=1")" = "404" ]
 
 curl -fsS "$base_url/" | grep -q '<div id="root"></div>'
 
