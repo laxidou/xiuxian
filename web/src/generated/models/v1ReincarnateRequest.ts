@@ -7,5 +7,7 @@ export type v1ReincarnateRequest = {
     idempotencyKey?: string;
     position?: v1Position;
     random?: boolean;
+    expectedLifeNumber?: string;
+    expectedStateVersion?: string;
 };
 

@@ -6,6 +6,9 @@ plugins:
   - plugin: go-grpc
     out: gen/go
     opt: paths=source_relative
+  - plugin: go-http
+    out: gen/go
+    opt: paths=source_relative
   - plugin: openapiv2
     out: api/openapi
     opt: generate_unbound_methods=true

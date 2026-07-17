@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -322,6 +324,41 @@ func TestNaturalDeathCreatesHiddenOpportunityAndReincarnationIsIdempotent(t *tes
 	}
 }
 
+func TestOldLifeCommandCannotAffectReincarnatedRole(t *testing.T) {
+	server, clock := newServer(t)
+	client := &testClient{baseURL: server.URL}
+	registered := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "late-command", "password": "a sufficiently long password", "role_name": "隔世者",
+	}, nil))
+	clock.Advance(8 * time.Hour)
+	dead := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 0, "y": 0}, map[string]string{
+		"Idempotency-Key":          "reborn-before-late-command",
+		"X-Expected-Life-Number":   fmt.Sprint(dead["life_number"]),
+		"X-Expected-State-Version": fmt.Sprint(dead["state_version"]),
+	})
+	if reborn.StatusCode != http.StatusOK {
+		t.Fatalf("reincarnate status = %d", reborn.StatusCode)
+	}
+	rebornState := decode[map[string]any](t, reborn)
+
+	delayed := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 10, "y": 0}, map[string]string{
+		"Idempotency-Key":          "delayed-first-life-move",
+		"X-Expected-Life-Number":   fmt.Sprint(registered["life_number"]),
+		"X-Expected-State-Version": fmt.Sprint(registered["state_version"]),
+	})
+	if delayed.StatusCode != http.StatusConflict {
+		t.Fatalf("delayed old-life command status = %d, want 409", delayed.StatusCode)
+	}
+	delayed.Body.Close()
+	current := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	currentPosition := current["position"].(map[string]any)
+	rebornPosition := rebornState["position"].(map[string]any)
+	if current["life_number"] != rebornState["life_number"] || currentPosition["x"] != rebornPosition["x"] || currentPosition["y"] != rebornPosition["y"] {
+		t.Fatalf("old-life command changed reincarnated state: before=%#v after=%#v", rebornState, current)
+	}
+}
+
 func TestMCPKeyIsRoleScopedRotatableAndImmediatelyRevocable(t *testing.T) {
 	server, _ := newServer(t)
 	web := &testClient{baseURL: server.URL}
@@ -371,8 +408,15 @@ func TestAcknowledgedStateSurvivesAuthorityRestart(t *testing.T) {
 	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"account": "durable", "password": "a sufficiently long password", "role_name": "不灭档",
 	}, nil)
-	registered.Body.Close()
-	move := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 2, "y": 0}, map[string]string{"Idempotency-Key": "durable-move"})
+	registeredState := decode[map[string]any](t, registered)
+	move := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 2, "y": 0}, map[string]string{
+		"Idempotency-Key":          "durable-move",
+		"X-Expected-Life-Number":   strconv.FormatInt(int64(registeredState["life_number"].(float64)), 10),
+		"X-Expected-State-Version": strconv.FormatInt(int64(registeredState["state_version"].(float64)), 10),
+	})
+	if move.StatusCode != http.StatusOK {
+		t.Fatalf("move status = %d", move.StatusCode)
+	}
 	move.Body.Close()
 	first.Close()
 
@@ -417,7 +461,7 @@ func TestPersistentAuthorityUsesDatabaseTimeInsteadOfProcessClock(t *testing.T) 
 	}
 }
 
-func TestConversationLifecycleKeepsPlayerMessagesUntrusted(t *testing.T) {
+func TestConversationLifecycleKeepsRoleMessagesUntrusted(t *testing.T) {
 	server, _ := newServer(t)
 	requester := &testClient{baseURL: server.URL}
 	response := requester.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
@@ -455,7 +499,7 @@ func TestConversationLifecycleKeepsPlayerMessagesUntrusted(t *testing.T) {
 	messages := items[0].(map[string]any)["messages"].([]any)
 	stored := messages[0].(map[string]any)
 	if stored["content"] != messageText || stored["trusted"] != false {
-		t.Fatalf("stored message must remain verbatim untrusted player content: %#v", stored)
+		t.Fatalf("stored message must remain verbatim untrusted role content: %#v", stored)
 	}
 
 	closed := recipient.request(t, http.MethodPost, "/api/v1/conversations/"+conversationID+"/close", map[string]any{}, map[string]string{"Idempotency-Key": "close-1"})

@@ -3,5 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export type v1ScanRequest = {
+    expectedLifeNumber?: string;
+    expectedStateVersion?: string;
 };
 

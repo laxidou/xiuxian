@@ -5,5 +5,7 @@
 export type v1CloseConversationRequest = {
     idempotencyKey?: string;
     conversationId?: string;
+    expectedLifeNumber?: string;
+    expectedStateVersion?: string;
 };
 

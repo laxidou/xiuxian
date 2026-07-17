@@ -11,7 +11,7 @@ docker compose up --build
 打开 <http://localhost>；也可以访问 <https://localhost>（本地 Caddy 使用自己的开发 CA，首次访问可能需要信任证书）。生产部署应把 `COOKIE_SECURE` 保持为 `true`。完整拓扑包括：
 
 - `web`：React / TypeScript / Vite 纯文字响应式客户端
-- `game-server`：唯一世界权威和 HTTP / SSE API
+- `game-server`：基于 Go-Kratos 的唯一世界权威和 HTTP / gRPC / SSE API
 - `mcp-gateway`：无状态 MCP JSON-RPC 入口，只持有到 authority 的客户端连接
 - `worker`：使用 `FOR UPDATE SKIP LOCKED` 消费 PostgreSQL Outbox
 - `postgres`：账号、世界快照、规范化领域表、事件和 Outbox 的权威存储
@@ -27,7 +27,7 @@ docker compose up --build
 - 32 级版本化规则表、惰性修为/年龄/境界/寿元派生、确定性寿尽边界
 - 千分之一世界单位的规范坐标、持续移动、转向、停止、突破后动态速度、单调世界边界
 - 主动神识扫描、5 秒限频、确定排序/截断、高境界扫描通知、隐藏机缘信号
-- 范围内交谈请求、接受/拒绝/忽略/关闭、消息显式标记为不可信玩家内容
+- 范围内交谈请求、接受/拒绝/忽略/关闭、消息显式标记为不可信角色内容
 - 整数分钟传功、跌境寿元校验、幂等重试、严格高境界同坐标夺功、分数修为守恒
 - 寿尽死亡、机缘生成与隐藏、精确坐标绑定、24 小时线性参悟、转世与永久身份保留
 - 可补读游标的 SSE、角色事件与跨世历史、PostgreSQL 同步快照和事务 Outbox
@@ -61,7 +61,15 @@ scripts/check.sh
 
 Protobuf 契约位于 `api/proto/xiuxian/v1/world.proto`，Buf 配置位于仓库根目录。规则引擎使用毫秒修为单位（自然经过 1 毫秒即增加 1 内部修为单位，60,000 单位为 1 点修为）；坐标使用千分之一世界单位，避免夺功和机缘发现依赖浮点相等。
 
-生成 Go/gRPC、OpenAPI 和 TypeScript 契约：
+后端按 Kratos 分层组织：
+
+- `internal/service`：Proto 生成接口与兼容 HTTP/SSE 的传输适配
+- `internal/biz`：上下文感知的世界用例和仓储接口
+- `internal/data`：PostgreSQL / 内存仓储实现
+- `internal/server`：Kratos HTTP、gRPC、中间件和路由装配
+- `cmd/game-server/wire_gen.go`：Wire 生成的依赖注入图
+
+生成 Go/gRPC/Kratos HTTP、OpenAPI、TypeScript 契约和 Wire 注入代码：
 
 ```bash
 scripts/generate-contracts.sh
@@ -76,12 +84,13 @@ git diff --exit-code
 POST https://localhost/mcp
 ```
 
-网关实现 MCP `initialize`、`tools/list` 和 `tools/call`。交谈消息始终作为 `trusted: false` 的玩家内容返回，代理不得把它们拼接为系统指令。
+网关实现 MCP `initialize`、`tools/list` 和 `tools/call`。交谈消息始终作为 `trusted: false` 的角色内容返回，代理不得把它们拼接为系统指令。
 
 ## 测试接缝
 
 - `internal/rules`：纯规则 worked examples，包括突破/寿尽同毫秒、动态速度、传功边界、组合感应半径和机缘转化。
 - `internal/api`：公开 HTTP 黑盒场景，包括并发重名、会话、移动、扫描、传功/夺功、死亡/转世、机缘、MCP Key 和 authority 重启恢复。
+- `internal/server`：Kratos 生成路由与兼容 REST 路由共同运行的传输测试。
 - `cmd/mcp-gateway`：MCP 工具发现与 authority 代理行为。
 
 完整 Compose 冒烟应确认 `world_snapshots` 存在一行，并且 `outbox` 行最终被 Worker 标记完成。

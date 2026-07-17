@@ -502,6 +502,14 @@
         },
         "conversationId": {
           "type": "string"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -613,6 +621,14 @@
         },
         "target": {
           "$ref": "#/definitions/v1Position"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -652,6 +668,14 @@
         },
         "random": {
           "type": "boolean"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -663,6 +687,14 @@
         },
         "targetId": {
           "type": "string"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -677,6 +709,14 @@
         },
         "action": {
           "type": "string"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -736,7 +776,17 @@
       }
     },
     "v1ScanRequest": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
     },
     "v1ScanResponse": {
       "type": "object",
@@ -792,6 +842,14 @@
         },
         "targetId": {
           "type": "string"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -806,6 +864,14 @@
         },
         "content": {
           "type": "string"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -814,6 +880,14 @@
       "properties": {
         "idempotencyKey": {
           "type": "string"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -827,6 +901,14 @@
           "type": "string"
         },
         "amountMinutes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
           "type": "string",
           "format": "int64"
         }

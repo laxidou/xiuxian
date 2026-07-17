@@ -6,5 +6,7 @@ export type v1TransferCultivationRequest = {
     idempotencyKey?: string;
     targetId?: string;
     amountMinutes?: string;
+    expectedLifeNumber?: string;
+    expectedStateVersion?: string;
 };
 

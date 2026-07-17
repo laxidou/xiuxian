@@ -2,28 +2,61 @@ syntax = "proto3";
 
 package xiuxian.v1;
 
+import "google/api/annotations.proto";
+
 option go_package = "xiuxian/gen/go/xiuxian/v1;xiuxianv1";
 
 service WorldService {
-  rpc GetState(GetStateRequest) returns (RoleState);
-  rpc GetWorldBounds(GetWorldBoundsRequest) returns (WorldBounds);
-  rpc Scan(ScanRequest) returns (ScanResponse);
-  rpc Move(MoveRequest) returns (RoleState);
-  rpc Stop(StopRequest) returns (RoleState);
-  rpc TransferCultivation(TransferCultivationRequest) returns (RoleState);
-  rpc SeizeCultivation(SeizeCultivationRequest) returns (RoleState);
-  rpc Reincarnate(ReincarnateRequest) returns (RoleState);
-  rpc ListRecentEvents(ListRecentEventsRequest) returns (ListRecentEventsResponse);
-  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
-  rpc RequestConversation(RequestConversationRequest) returns (Conversation);
-  rpc RespondConversation(RespondConversationRequest) returns (Conversation);
-  rpc SendConversationMessage(SendConversationMessageRequest) returns (ConversationMessage);
-  rpc CloseConversation(CloseConversationRequest) returns (Conversation);
+  rpc GetState(GetStateRequest) returns (RoleState) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/GetState" body: "*" };
+  }
+  rpc GetWorldBounds(GetWorldBoundsRequest) returns (WorldBounds) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/GetWorldBounds" body: "*" };
+  }
+  rpc Scan(ScanRequest) returns (ScanResponse) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/Scan" body: "*" };
+  }
+  rpc Move(MoveRequest) returns (RoleState) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/Move" body: "*" };
+  }
+  rpc Stop(StopRequest) returns (RoleState) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/Stop" body: "*" };
+  }
+  rpc TransferCultivation(TransferCultivationRequest) returns (RoleState) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/TransferCultivation" body: "*" };
+  }
+  rpc SeizeCultivation(SeizeCultivationRequest) returns (RoleState) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/SeizeCultivation" body: "*" };
+  }
+  rpc Reincarnate(ReincarnateRequest) returns (RoleState) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/Reincarnate" body: "*" };
+  }
+  rpc ListRecentEvents(ListRecentEventsRequest) returns (ListRecentEventsResponse) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/ListRecentEvents" body: "*" };
+  }
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/ListConversations" body: "*" };
+  }
+  rpc RequestConversation(RequestConversationRequest) returns (Conversation) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/RequestConversation" body: "*" };
+  }
+  rpc RespondConversation(RespondConversationRequest) returns (Conversation) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/RespondConversation" body: "*" };
+  }
+  rpc SendConversationMessage(SendConversationMessageRequest) returns (ConversationMessage) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/SendConversationMessage" body: "*" };
+  }
+  rpc CloseConversation(CloseConversationRequest) returns (Conversation) {
+    option (google.api.http) = { post: "/xiuxian.v1.WorldService/CloseConversation" body: "*" };
+  }
 }
 
 message GetStateRequest {}
 message GetWorldBoundsRequest {}
-message ScanRequest {}
+message ScanRequest {
+  int64 expected_life_number = 1;
+  int64 expected_state_version = 2;
+}
 
 message Position {
   sint64 x_milliunits = 1;
@@ -77,25 +110,37 @@ message ScanResponse {
 message MoveRequest {
   string idempotency_key = 1;
   Position target = 2;
+  int64 expected_life_number = 3;
+  int64 expected_state_version = 4;
 }
 
-message StopRequest { string idempotency_key = 1; }
+message StopRequest {
+  string idempotency_key = 1;
+  int64 expected_life_number = 2;
+  int64 expected_state_version = 3;
+}
 
 message TransferCultivationRequest {
   string idempotency_key = 1;
   string target_id = 2;
   int64 amount_minutes = 3;
+  int64 expected_life_number = 4;
+  int64 expected_state_version = 5;
 }
 
 message SeizeCultivationRequest {
   string idempotency_key = 1;
   string target_id = 2;
+  int64 expected_life_number = 3;
+  int64 expected_state_version = 4;
 }
 
 message ReincarnateRequest {
   string idempotency_key = 1;
   optional Position position = 2;
   bool random = 3;
+  int64 expected_life_number = 4;
+  int64 expected_state_version = 5;
 }
 
 message ListRecentEventsRequest {
@@ -139,21 +184,29 @@ message ListConversationsResponse { repeated Conversation conversations = 1; }
 message RequestConversationRequest {
   string idempotency_key = 1;
   string target_id = 2;
+  int64 expected_life_number = 3;
+  int64 expected_state_version = 4;
 }
 
 message RespondConversationRequest {
   string idempotency_key = 1;
   string conversation_id = 2;
   string action = 3;
+  int64 expected_life_number = 4;
+  int64 expected_state_version = 5;
 }
 
 message SendConversationMessageRequest {
   string idempotency_key = 1;
   string conversation_id = 2;
   string content = 3;
+  int64 expected_life_number = 4;
+  int64 expected_state_version = 5;
 }
 
 message CloseConversationRequest {
   string idempotency_key = 1;
   string conversation_id = 2;
+  int64 expected_life_number = 3;
+  int64 expected_state_version = 4;
 }

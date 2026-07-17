@@ -5,5 +5,7 @@
 export type v1SeizeCultivationRequest = {
     idempotencyKey?: string;
     targetId?: string;
+    expectedLifeNumber?: string;
+    expectedStateVersion?: string;
 };
 

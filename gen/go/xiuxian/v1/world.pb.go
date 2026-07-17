@@ -7,6 +7,7 @@
 package xiuxianv1
 
 import (
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -94,9 +95,11 @@ func (*GetWorldBoundsRequest) Descriptor() ([]byte, []int) {
 }
 
 type ScanRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,1,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,2,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ScanRequest) Reset() {
@@ -127,6 +130,20 @@ func (x *ScanRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ScanRequest.ProtoReflect.Descriptor instead.
 func (*ScanRequest) Descriptor() ([]byte, []int) {
 	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ScanRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *ScanRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
 }
 
 type Position struct {
@@ -594,11 +611,13 @@ func (x *ScanResponse) GetHasMore() bool {
 }
 
 type MoveRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	Target         *Position              `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Target               *Position              `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,3,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,4,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *MoveRequest) Reset() {
@@ -645,11 +664,27 @@ func (x *MoveRequest) GetTarget() *Position {
 	return nil
 }
 
+func (x *MoveRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *MoveRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
+}
+
 type StopRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,2,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,3,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *StopRequest) Reset() {
@@ -689,13 +724,29 @@ func (x *StopRequest) GetIdempotencyKey() string {
 	return ""
 }
 
+func (x *StopRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *StopRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
+}
+
 type TransferCultivationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	TargetId       string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
-	AmountMinutes  int64                  `protobuf:"varint,3,opt,name=amount_minutes,json=amountMinutes,proto3" json:"amount_minutes,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	TargetId             string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	AmountMinutes        int64                  `protobuf:"varint,3,opt,name=amount_minutes,json=amountMinutes,proto3" json:"amount_minutes,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,4,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,5,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *TransferCultivationRequest) Reset() {
@@ -749,12 +800,28 @@ func (x *TransferCultivationRequest) GetAmountMinutes() int64 {
 	return 0
 }
 
+func (x *TransferCultivationRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *TransferCultivationRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
+}
+
 type SeizeCultivationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	TargetId       string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	TargetId             string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,3,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,4,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *SeizeCultivationRequest) Reset() {
@@ -801,13 +868,29 @@ func (x *SeizeCultivationRequest) GetTargetId() string {
 	return ""
 }
 
+func (x *SeizeCultivationRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *SeizeCultivationRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
+}
+
 type ReincarnateRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	Position       *Position              `protobuf:"bytes,2,opt,name=position,proto3,oneof" json:"position,omitempty"`
-	Random         bool                   `protobuf:"varint,3,opt,name=random,proto3" json:"random,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Position             *Position              `protobuf:"bytes,2,opt,name=position,proto3,oneof" json:"position,omitempty"`
+	Random               bool                   `protobuf:"varint,3,opt,name=random,proto3" json:"random,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,4,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,5,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ReincarnateRequest) Reset() {
@@ -859,6 +942,20 @@ func (x *ReincarnateRequest) GetRandom() bool {
 		return x.Random
 	}
 	return false
+}
+
+func (x *ReincarnateRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *ReincarnateRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
 }
 
 type ListRecentEventsRequest struct {
@@ -1290,11 +1387,13 @@ func (x *ListConversationsResponse) GetConversations() []*Conversation {
 }
 
 type RequestConversationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	TargetId       string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	TargetId             string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,3,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,4,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *RequestConversationRequest) Reset() {
@@ -1341,13 +1440,29 @@ func (x *RequestConversationRequest) GetTargetId() string {
 	return ""
 }
 
+func (x *RequestConversationRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *RequestConversationRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
+}
+
 type RespondConversationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	ConversationId string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	Action         string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ConversationId       string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	Action               string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,4,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,5,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *RespondConversationRequest) Reset() {
@@ -1401,13 +1516,29 @@ func (x *RespondConversationRequest) GetAction() string {
 	return ""
 }
 
+func (x *RespondConversationRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *RespondConversationRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
+}
+
 type SendConversationMessageRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	ConversationId string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	Content        string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ConversationId       string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	Content              string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,4,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,5,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *SendConversationMessageRequest) Reset() {
@@ -1461,12 +1592,28 @@ func (x *SendConversationMessageRequest) GetContent() string {
 	return ""
 }
 
+func (x *SendConversationMessageRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *SendConversationMessageRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
+}
+
 type CloseConversationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	ConversationId string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ConversationId       string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	ExpectedLifeNumber   int64                  `protobuf:"varint,3,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
+	ExpectedStateVersion int64                  `protobuf:"varint,4,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *CloseConversationRequest) Reset() {
@@ -1513,15 +1660,31 @@ func (x *CloseConversationRequest) GetConversationId() string {
 	return ""
 }
 
+func (x *CloseConversationRequest) GetExpectedLifeNumber() int64 {
+	if x != nil {
+		return x.ExpectedLifeNumber
+	}
+	return 0
+}
+
+func (x *CloseConversationRequest) GetExpectedStateVersion() int64 {
+	if x != nil {
+		return x.ExpectedStateVersion
+	}
+	return 0
+}
+
 var File_xiuxian_v1_world_proto protoreflect.FileDescriptor
 
 const file_xiuxian_v1_world_proto_rawDesc = "" +
 	"\n" +
 	"\x16xiuxian/v1/world.proto\x12\n" +
-	"xiuxian.v1\"\x11\n" +
+	"xiuxian.v1\x1a\x1cgoogle/api/annotations.proto\"\x11\n" +
 	"\x0fGetStateRequest\"\x17\n" +
-	"\x15GetWorldBoundsRequest\"\r\n" +
-	"\vScanRequest\"P\n" +
+	"\x15GetWorldBoundsRequest\"u\n" +
+	"\vScanRequest\x120\n" +
+	"\x14expected_life_number\x18\x01 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x02 \x01(\x03R\x14expectedStateVersion\"P\n" +
 	"\bPosition\x12!\n" +
 	"\fx_milliunits\x18\x01 \x01(\x12R\vxMilliunits\x12!\n" +
 	"\fy_milliunits\x18\x02 \x01(\x12R\vyMilliunits\"\xd6\x03\n" +
@@ -1564,23 +1727,33 @@ const file_xiuxian_v1_world_proto_rawDesc = "" +
 	"\fScanResponse\x12*\n" +
 	"\x05roles\x18\x01 \x03(\v2\x14.xiuxian.v1.ScanRoleR\x05roles\x12C\n" +
 	"\ropportunities\x18\x02 \x03(\v2\x1d.xiuxian.v1.OpportunitySignalR\ropportunities\x12\x19\n" +
-	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"d\n" +
+	"\bhas_more\x18\x03 \x01(\bR\ahasMore\"\xcc\x01\n" +
 	"\vMoveRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12,\n" +
-	"\x06target\x18\x02 \x01(\v2\x14.xiuxian.v1.PositionR\x06target\"6\n" +
+	"\x06target\x18\x02 \x01(\v2\x14.xiuxian.v1.PositionR\x06target\x120\n" +
+	"\x14expected_life_number\x18\x03 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x04 \x01(\x03R\x14expectedStateVersion\"\x9e\x01\n" +
 	"\vStopRequest\x12'\n" +
-	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\"\x89\x01\n" +
+	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x120\n" +
+	"\x14expected_life_number\x18\x02 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x03 \x01(\x03R\x14expectedStateVersion\"\xf1\x01\n" +
 	"\x1aTransferCultivationRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12\x1b\n" +
 	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x12%\n" +
-	"\x0eamount_minutes\x18\x03 \x01(\x03R\ramountMinutes\"_\n" +
+	"\x0eamount_minutes\x18\x03 \x01(\x03R\ramountMinutes\x120\n" +
+	"\x14expected_life_number\x18\x04 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x05 \x01(\x03R\x14expectedStateVersion\"\xc7\x01\n" +
 	"\x17SeizeCultivationRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12\x1b\n" +
-	"\ttarget_id\x18\x02 \x01(\tR\btargetId\"\x99\x01\n" +
+	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x120\n" +
+	"\x14expected_life_number\x18\x03 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x04 \x01(\x03R\x14expectedStateVersion\"\x81\x02\n" +
 	"\x12ReincarnateRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x125\n" +
 	"\bposition\x18\x02 \x01(\v2\x14.xiuxian.v1.PositionH\x00R\bposition\x88\x01\x01\x12\x16\n" +
-	"\x06random\x18\x03 \x01(\bR\x06randomB\v\n" +
+	"\x06random\x18\x03 \x01(\bR\x06random\x120\n" +
+	"\x14expected_life_number\x18\x04 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x05 \x01(\x03R\x14expectedStateVersionB\v\n" +
 	"\t_position\"E\n" +
 	"\x17ListRecentEventsRequest\x12\x14\n" +
 	"\x05after\x18\x01 \x01(\x03R\x05after\x12\x14\n" +
@@ -1612,36 +1785,44 @@ const file_xiuxian_v1_world_proto_rawDesc = "" +
 	"\x16created_at_unix_millis\x18\x06 \x01(\x03R\x13createdAtUnixMillis\x123\n" +
 	"\x16updated_at_unix_millis\x18\a \x01(\x03R\x13updatedAtUnixMillis\"[\n" +
 	"\x19ListConversationsResponse\x12>\n" +
-	"\rconversations\x18\x01 \x03(\v2\x18.xiuxian.v1.ConversationR\rconversations\"b\n" +
+	"\rconversations\x18\x01 \x03(\v2\x18.xiuxian.v1.ConversationR\rconversations\"\xca\x01\n" +
 	"\x1aRequestConversationRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12\x1b\n" +
-	"\ttarget_id\x18\x02 \x01(\tR\btargetId\"\x86\x01\n" +
+	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x120\n" +
+	"\x14expected_life_number\x18\x03 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x04 \x01(\x03R\x14expectedStateVersion\"\xee\x01\n" +
 	"\x1aRespondConversationRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x16\n" +
-	"\x06action\x18\x03 \x01(\tR\x06action\"\x8c\x01\n" +
+	"\x06action\x18\x03 \x01(\tR\x06action\x120\n" +
+	"\x14expected_life_number\x18\x04 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x05 \x01(\x03R\x14expectedStateVersion\"\xf4\x01\n" +
 	"\x1eSendConversationMessageRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x18\n" +
-	"\acontent\x18\x03 \x01(\tR\acontent\"l\n" +
+	"\acontent\x18\x03 \x01(\tR\acontent\x120\n" +
+	"\x14expected_life_number\x18\x04 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x05 \x01(\x03R\x14expectedStateVersion\"\xd4\x01\n" +
 	"\x18CloseConversationRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12'\n" +
-	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId2\xe3\b\n" +
-	"\fWorldService\x12>\n" +
-	"\bGetState\x12\x1b.xiuxian.v1.GetStateRequest\x1a\x15.xiuxian.v1.RoleState\x12L\n" +
-	"\x0eGetWorldBounds\x12!.xiuxian.v1.GetWorldBoundsRequest\x1a\x17.xiuxian.v1.WorldBounds\x129\n" +
-	"\x04Scan\x12\x17.xiuxian.v1.ScanRequest\x1a\x18.xiuxian.v1.ScanResponse\x126\n" +
-	"\x04Move\x12\x17.xiuxian.v1.MoveRequest\x1a\x15.xiuxian.v1.RoleState\x126\n" +
-	"\x04Stop\x12\x17.xiuxian.v1.StopRequest\x1a\x15.xiuxian.v1.RoleState\x12T\n" +
-	"\x13TransferCultivation\x12&.xiuxian.v1.TransferCultivationRequest\x1a\x15.xiuxian.v1.RoleState\x12N\n" +
-	"\x10SeizeCultivation\x12#.xiuxian.v1.SeizeCultivationRequest\x1a\x15.xiuxian.v1.RoleState\x12D\n" +
-	"\vReincarnate\x12\x1e.xiuxian.v1.ReincarnateRequest\x1a\x15.xiuxian.v1.RoleState\x12]\n" +
-	"\x10ListRecentEvents\x12#.xiuxian.v1.ListRecentEventsRequest\x1a$.xiuxian.v1.ListRecentEventsResponse\x12`\n" +
-	"\x11ListConversations\x12$.xiuxian.v1.ListConversationsRequest\x1a%.xiuxian.v1.ListConversationsResponse\x12W\n" +
-	"\x13RequestConversation\x12&.xiuxian.v1.RequestConversationRequest\x1a\x18.xiuxian.v1.Conversation\x12W\n" +
-	"\x13RespondConversation\x12&.xiuxian.v1.RespondConversationRequest\x1a\x18.xiuxian.v1.Conversation\x12f\n" +
-	"\x17SendConversationMessage\x12*.xiuxian.v1.SendConversationMessageRequest\x1a\x1f.xiuxian.v1.ConversationMessage\x12S\n" +
-	"\x11CloseConversation\x12$.xiuxian.v1.CloseConversationRequest\x1a\x18.xiuxian.v1.ConversationB%Z#xiuxian/gen/go/xiuxian/v1;xiuxianv1b\x06proto3"
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x120\n" +
+	"\x14expected_life_number\x18\x03 \x01(\x03R\x12expectedLifeNumber\x124\n" +
+	"\x16expected_state_version\x18\x04 \x01(\x03R\x14expectedStateVersion2\xbf\x0e\n" +
+	"\fWorldService\x12l\n" +
+	"\bGetState\x12\x1b.xiuxian.v1.GetStateRequest\x1a\x15.xiuxian.v1.RoleState\",\x82\xd3\xe4\x93\x02&:\x01*\"!/xiuxian.v1.WorldService/GetState\x12\x80\x01\n" +
+	"\x0eGetWorldBounds\x12!.xiuxian.v1.GetWorldBoundsRequest\x1a\x17.xiuxian.v1.WorldBounds\"2\x82\xd3\xe4\x93\x02,:\x01*\"'/xiuxian.v1.WorldService/GetWorldBounds\x12c\n" +
+	"\x04Scan\x12\x17.xiuxian.v1.ScanRequest\x1a\x18.xiuxian.v1.ScanResponse\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/xiuxian.v1.WorldService/Scan\x12`\n" +
+	"\x04Move\x12\x17.xiuxian.v1.MoveRequest\x1a\x15.xiuxian.v1.RoleState\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/xiuxian.v1.WorldService/Move\x12`\n" +
+	"\x04Stop\x12\x17.xiuxian.v1.StopRequest\x1a\x15.xiuxian.v1.RoleState\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/xiuxian.v1.WorldService/Stop\x12\x8d\x01\n" +
+	"\x13TransferCultivation\x12&.xiuxian.v1.TransferCultivationRequest\x1a\x15.xiuxian.v1.RoleState\"7\x82\xd3\xe4\x93\x021:\x01*\",/xiuxian.v1.WorldService/TransferCultivation\x12\x84\x01\n" +
+	"\x10SeizeCultivation\x12#.xiuxian.v1.SeizeCultivationRequest\x1a\x15.xiuxian.v1.RoleState\"4\x82\xd3\xe4\x93\x02.:\x01*\")/xiuxian.v1.WorldService/SeizeCultivation\x12u\n" +
+	"\vReincarnate\x12\x1e.xiuxian.v1.ReincarnateRequest\x1a\x15.xiuxian.v1.RoleState\"/\x82\xd3\xe4\x93\x02):\x01*\"$/xiuxian.v1.WorldService/Reincarnate\x12\x93\x01\n" +
+	"\x10ListRecentEvents\x12#.xiuxian.v1.ListRecentEventsRequest\x1a$.xiuxian.v1.ListRecentEventsResponse\"4\x82\xd3\xe4\x93\x02.:\x01*\")/xiuxian.v1.WorldService/ListRecentEvents\x12\x97\x01\n" +
+	"\x11ListConversations\x12$.xiuxian.v1.ListConversationsRequest\x1a%.xiuxian.v1.ListConversationsResponse\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/xiuxian.v1.WorldService/ListConversations\x12\x90\x01\n" +
+	"\x13RequestConversation\x12&.xiuxian.v1.RequestConversationRequest\x1a\x18.xiuxian.v1.Conversation\"7\x82\xd3\xe4\x93\x021:\x01*\",/xiuxian.v1.WorldService/RequestConversation\x12\x90\x01\n" +
+	"\x13RespondConversation\x12&.xiuxian.v1.RespondConversationRequest\x1a\x18.xiuxian.v1.Conversation\"7\x82\xd3\xe4\x93\x021:\x01*\",/xiuxian.v1.WorldService/RespondConversation\x12\xa3\x01\n" +
+	"\x17SendConversationMessage\x12*.xiuxian.v1.SendConversationMessageRequest\x1a\x1f.xiuxian.v1.ConversationMessage\";\x82\xd3\xe4\x93\x025:\x01*\"0/xiuxian.v1.WorldService/SendConversationMessage\x12\x8a\x01\n" +
+	"\x11CloseConversation\x12$.xiuxian.v1.CloseConversationRequest\x1a\x18.xiuxian.v1.Conversation\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/xiuxian.v1.WorldService/CloseConversationB%Z#xiuxian/gen/go/xiuxian/v1;xiuxianv1b\x06proto3"
 
 var (
 	file_xiuxian_v1_world_proto_rawDescOnce sync.Once

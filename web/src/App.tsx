@@ -51,7 +51,11 @@ function App() {
     const after = events.at(-1)?.id ?? 0
     const source = new EventSource(`/api/v1/events/stream?after=${after}`, { withCredentials: true })
     source.onmessage = () => void refresh()
-    for (const type of ['scanned', 'death', 'reincarnation', 'conversation_incoming', 'conversation_message']) {
+    for (const type of [
+      'scanned', 'movement_arrived', 'conversation_requested', 'conversation_incoming', 'conversation_responded',
+      'conversation_message', 'conversation_closed', 'transfer', 'transfer_received', 'seizure',
+      'opportunity_claimed', 'opportunity_converting', 'opportunity_converted', 'death', 'reincarnation',
+    ]) {
       source.addEventListener(type, () => void refresh())
     }
     return () => source.close()

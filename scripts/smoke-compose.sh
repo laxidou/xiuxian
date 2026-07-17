@@ -23,7 +23,11 @@ require curl
 require docker
 require jq
 
-docker compose up -d --build
+if [ "${SKIP_BUILD:-0}" = "1" ]; then
+  docker compose up -d
+else
+  docker compose up -d --build
+fi
 docker compose restart caddy >/dev/null
 
 attempt=0
@@ -50,6 +54,8 @@ jq -n --arg account "$account" --arg password "$password" --arg role_name "$role
     "$base_url/api/v1/auth/register" >"$response_file"
 
 role_id=$(jq -er --arg role_name "$role_name" 'select(.name == $role_name and .life_number == 1 and .status == "alive") | .id' "$response_file")
+life_number=$(jq -er '.life_number' "$response_file")
+state_version=$(jq -er '.state_version' "$response_file")
 
 curl -fsS -b "$cookie_jar" "$base_url/api/v1/state" |
   jq -e --arg role_id "$role_id" '.id == $role_id and .life_number == 1' >/dev/null
@@ -66,13 +72,19 @@ jq -n '{jsonrpc:"2.0", id:1, method:"tools/call", params:{name:"get_state", argu
   curl -fsS -H "Authorization: Bearer $api_key" -H 'Content-Type: application/json' --data-binary @- "$base_url/mcp" |
   jq -e --arg role_id "$role_id" '.result.isError == false and (.result.content[0].text | fromjson | .id == $role_id)' >/dev/null
 
+curl -fsS -b "$cookie_jar" "$base_url/api/v1/state" >"$response_file"
+life_number=$(jq -er '.life_number' "$response_file")
+state_version=$(jq -er '.state_version' "$response_file")
+
 move_key="smoke-move-$suffix"
 jq -n '{x: 1, y: 0}' |
-  curl -fsS -b "$cookie_jar" -H 'Content-Type: application/json' -H "Idempotency-Key: $move_key" --data-binary @- \
+  curl -fsS -b "$cookie_jar" -H 'Content-Type: application/json' -H "Idempotency-Key: $move_key" \
+    -H "X-Expected-Life-Number: $life_number" -H "X-Expected-State-Version: $state_version" --data-binary @- \
     "$base_url/api/v1/movement/move" >"$response_file"
 first_version=$(jq -er '.state_version' "$response_file")
 jq -n '{x: 1, y: 0}' |
-  curl -fsS -b "$cookie_jar" -H 'Content-Type: application/json' -H "Idempotency-Key: $move_key" --data-binary @- \
+  curl -fsS -b "$cookie_jar" -H 'Content-Type: application/json' -H "Idempotency-Key: $move_key" \
+    -H "X-Expected-Life-Number: $life_number" -H "X-Expected-State-Version: $state_version" --data-binary @- \
     "$base_url/api/v1/movement/move" |
   jq -e --argjson first_version "$first_version" '.state_version == $first_version' >/dev/null
 

@@ -27,7 +27,13 @@ var (
 	ErrNotFound        = errors.New("resource not found")
 	ErrForbidden       = errors.New("action is not allowed")
 	ErrRateLimited     = errors.New("rate limit exceeded")
+	ErrStaleCommand    = errors.New("command expectation is stale")
 )
+
+type CommandExpectation struct {
+	LifeNumber   int64
+	StateVersion int64
+}
 
 type Clock interface {
 	Now() time.Time
@@ -454,7 +460,7 @@ func (s *Service) SettleDeadline(roleID string, expectedVersion int64) (bool, er
 	return before == RoleAlive && role.Status == RolePendingReincarnation, nil
 }
 
-func (s *Service) Move(roleID, idempotencyKey string, target rules.Position) (State, error) {
+func (s *Service) Move(roleID, idempotencyKey string, target rules.Position, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -466,6 +472,9 @@ func (s *Service) Move(roleID, idempotencyKey string, target rules.Position) (St
 	}
 	if previous, ok := s.idempotencyResultLocked(roleID, idempotencyKey); ok {
 		return previous, nil
+	}
+	if err := validateCommandExpectation(role, expectation); err != nil {
+		return State{}, err
 	}
 	now := s.authoritativeNowLocked(role)
 	current := s.stateLocked(role, now)
@@ -486,7 +495,7 @@ func (s *Service) Move(roleID, idempotencyKey string, target rules.Position) (St
 	return result, nil
 }
 
-func (s *Service) Stop(roleID, idempotencyKey string) (State, error) {
+func (s *Service) Stop(roleID, idempotencyKey string, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -498,6 +507,9 @@ func (s *Service) Stop(roleID, idempotencyKey string) (State, error) {
 	}
 	if previous, ok := s.idempotencyResultLocked(roleID, idempotencyKey); ok {
 		return previous, nil
+	}
+	if err := validateCommandExpectation(role, expectation); err != nil {
+		return State{}, err
 	}
 	now := s.authoritativeNowLocked(role)
 	current := s.stateLocked(role, now)
@@ -517,12 +529,15 @@ func (s *Service) Stop(roleID, idempotencyKey string) (State, error) {
 	return result, nil
 }
 
-func (s *Service) Scan(roleID string) (ScanResult, error) {
+func (s *Service) Scan(roleID string, expectation CommandExpectation) (ScanResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scanner, ok := s.roles[roleID]
 	if !ok {
 		return ScanResult{}, ErrUnauthenticated
+	}
+	if err := validateCommandExpectation(scanner, expectation); err != nil {
+		return ScanResult{}, err
 	}
 	now := s.authoritativeNowLocked(scanner)
 	scannerState := s.stateLocked(scanner, now)
@@ -582,7 +597,7 @@ func (s *Service) Scan(roleID string) (ScanResult, error) {
 	return result, nil
 }
 
-func (s *Service) Transfer(roleID, targetID, idempotencyKey string, amountMinutes int64) (State, error) {
+func (s *Service) Transfer(roleID, targetID, idempotencyKey string, amountMinutes int64, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -597,6 +612,9 @@ func (s *Service) Transfer(roleID, targetID, idempotencyKey string, amountMinute
 	sender, ok := s.roles[roleID]
 	if !ok {
 		return State{}, ErrUnauthenticated
+	}
+	if err := validateCommandExpectation(sender, expectation); err != nil {
+		return State{}, err
 	}
 	receiver, ok := s.roles[targetID]
 	if !ok || receiver == sender {
@@ -644,7 +662,7 @@ func (s *Service) Transfer(roleID, targetID, idempotencyKey string, amountMinute
 	return result, nil
 }
 
-func (s *Service) Seize(roleID, targetID, idempotencyKey string) (State, error) {
+func (s *Service) Seize(roleID, targetID, idempotencyKey string, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -656,6 +674,9 @@ func (s *Service) Seize(roleID, targetID, idempotencyKey string) (State, error) 
 	attacker, ok := s.roles[roleID]
 	if !ok {
 		return State{}, ErrUnauthenticated
+	}
+	if err := validateCommandExpectation(attacker, expectation); err != nil {
+		return State{}, err
 	}
 	target, ok := s.roles[targetID]
 	if !ok || target == attacker {
@@ -689,7 +710,7 @@ func (s *Service) Seize(roleID, targetID, idempotencyKey string) (State, error) 
 	return result, nil
 }
 
-func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string) (Conversation, error) {
+func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string, expectation CommandExpectation) (Conversation, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return Conversation{}, ErrIdempotencyKey
 	}
@@ -702,6 +723,9 @@ func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string) (
 	requester, ok := s.roles[roleID]
 	if !ok {
 		return Conversation{}, ErrUnauthenticated
+	}
+	if err := validateCommandExpectation(requester, expectation); err != nil {
+		return Conversation{}, err
 	}
 	recipient, ok := s.roles[targetID]
 	if !ok || recipient == requester {
@@ -732,7 +756,7 @@ func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string) (
 	return *conversation, nil
 }
 
-func (s *Service) RespondConversation(roleID, conversationID, idempotencyKey, action string) (Conversation, error) {
+func (s *Service) RespondConversation(roleID, conversationID, idempotencyKey, action string, expectation CommandExpectation) (Conversation, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return Conversation{}, ErrIdempotencyKey
 	}
@@ -744,6 +768,9 @@ func (s *Service) RespondConversation(roleID, conversationID, idempotencyKey, ac
 	}
 	if conversation.RecipientID != roleID {
 		return Conversation{}, ErrForbidden
+	}
+	if err := validateCommandExpectation(s.roles[roleID], expectation); err != nil {
+		return Conversation{}, err
 	}
 	now := s.authoritativeNowLocked(s.roles[roleID])
 	s.stateLocked(s.roles[conversation.RequesterID], now)
@@ -777,7 +804,7 @@ func (s *Service) RespondConversation(roleID, conversationID, idempotencyKey, ac
 	return *conversation, nil
 }
 
-func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey, content string) (ConversationMessage, error) {
+func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey, content string, expectation CommandExpectation) (ConversationMessage, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return ConversationMessage{}, ErrIdempotencyKey
 	}
@@ -793,6 +820,9 @@ func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey
 	}
 	if conversation.Status != ConversationAccepted || (conversation.RequesterID != roleID && conversation.RecipientID != roleID) {
 		return ConversationMessage{}, ErrForbidden
+	}
+	if err := validateCommandExpectation(s.roles[roleID], expectation); err != nil {
+		return ConversationMessage{}, err
 	}
 	now := s.authoritativeNowLocked(s.roles[roleID])
 	s.stateLocked(s.roles[conversation.RequesterID], now)
@@ -824,7 +854,7 @@ func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey
 	return message, nil
 }
 
-func (s *Service) CloseConversation(roleID, conversationID, idempotencyKey string) (Conversation, error) {
+func (s *Service) CloseConversation(roleID, conversationID, idempotencyKey string, expectation CommandExpectation) (Conversation, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return Conversation{}, ErrIdempotencyKey
 	}
@@ -836,6 +866,9 @@ func (s *Service) CloseConversation(roleID, conversationID, idempotencyKey strin
 	}
 	if conversation.RequesterID != roleID && conversation.RecipientID != roleID {
 		return Conversation{}, ErrForbidden
+	}
+	if err := validateCommandExpectation(s.roles[roleID], expectation); err != nil {
+		return Conversation{}, err
 	}
 	now := s.authoritativeNowLocked(s.roles[roleID])
 	s.stateLocked(s.roles[conversation.RequesterID], now)
@@ -902,7 +935,7 @@ func (s *Service) Bounds() Bounds {
 	return Bounds{MinX: s.minX.Units(), MaxX: s.maxX.Units(), MinY: s.minY.Units(), MaxY: s.maxY.Units()}
 }
 
-func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Position) (State, error) {
+func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Position, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -914,6 +947,9 @@ func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Pos
 	role, ok := s.roles[roleID]
 	if !ok {
 		return State{}, ErrUnauthenticated
+	}
+	if err := validateCommandExpectation(role, expectation); err != nil {
+		return State{}, err
 	}
 	now := s.authoritativeNowLocked(role)
 	s.stateLocked(role, now)
@@ -1041,8 +1077,16 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 	}
 	if role.Status == RoleAlive {
 		s.claimOpportunityLocked(role, position, now)
+		trajectoryRealm := rules.Realm{}
+		if role.Trajectory != nil {
+			trajectoryRealm = rules.RealmFor(role.TrajectoryCultivation)
+		}
 		s.settleOpportunityLocked(role, now)
 		cultivation = s.cultivationLocked(role, now)
+		if role.Trajectory != nil && rules.RealmFor(cultivation).Level != trajectoryRealm.Level {
+			s.rebaseTrajectoryLocked(role, position, now, cultivation)
+			role.StateVersion++
+		}
 		life = rules.DeriveLife(cultivation, age)
 	}
 	if role.Status != RoleAlive {
@@ -1293,6 +1337,19 @@ func (s *Service) rememberIdempotencyLocked(roleID, key string, result State) {
 		s.idempotency[roleID] = make(map[string]State)
 	}
 	s.idempotency[roleID][key] = result
+}
+
+func validateCommandExpectation(role *Role, expectation CommandExpectation) error {
+	if role == nil {
+		return ErrUnauthenticated
+	}
+	if expectation.LifeNumber <= 0 || expectation.StateVersion <= 0 {
+		return ErrInvalid
+	}
+	if role.LifeNumber != expectation.LifeNumber || role.StateVersion != expectation.StateVersion {
+		return ErrStaleCommand
+	}
+	return nil
 }
 
 func newToken() (string, [32]byte, error) {

@@ -6,5 +6,7 @@ export type v1SendConversationMessageRequest = {
     idempotencyKey?: string;
     conversationId?: string;
     content?: string;
+    expectedLifeNumber?: string;
+    expectedStateVersion?: string;
 };
 

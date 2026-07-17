@@ -1,70 +1,46 @@
 package main
 
 import (
-	"context"
-	"log"
-	"net"
-	"net/http"
 	"os"
-	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
+	"github.com/go-kratos/kratos/v2"
+	"github.com/go-kratos/kratos/v2/log"
+	kratosgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
+	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 
-	worldv1 "xiuxian/gen/go/xiuxian/v1"
-	"xiuxian/internal/api"
-	"xiuxian/internal/rpc"
-	"xiuxian/internal/storage"
-	"xiuxian/internal/world"
+	"xiuxian/internal/conf"
 )
 
+const serviceName = "xiuxian.game-server"
+
 func main() {
-	address := os.Getenv("GAME_SERVER_ADDRESS")
-	if address == "" {
-		address = ":8080"
-	}
-	grpcAddress := os.Getenv("GAME_SERVER_GRPC_ADDRESS")
-	if grpcAddress == "" {
-		grpcAddress = ":9090"
-	}
-	service := world.NewService(world.SystemClock{})
-	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
-		store, err := storage.OpenPostgres(context.Background(), databaseURL)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer store.Close()
-		service, err = world.NewPersistentService(context.Background(), world.SystemClock{}, store)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	server := &http.Server{
-		Addr: address,
-		Handler: api.NewHandler(service, api.Options{
-			SecureCookies: os.Getenv("COOKIE_SECURE") != "false",
-			WorkerToken:   os.Getenv("WORKER_TOKEN"),
-			Version:       os.Getenv("APP_VERSION"),
-		}),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-	listener, err := net.Listen("tcp", grpcAddress)
+	config := conf.Load()
+	baseLogger := log.NewFilter(
+		log.NewStdLogger(os.Stdout),
+		log.FilterKey("args"),
+	)
+	logger := log.With(
+		baseLogger,
+		"ts", log.DefaultTimestamp,
+		"caller", log.DefaultCaller,
+		"service.name", serviceName,
+		"service.version", config.Server.Version,
+	)
+	app, cleanup, err := wireApp(config, logger)
 	if err != nil {
-		log.Fatal(err)
+		log.NewHelper(logger).Fatal(err)
 	}
-	grpcServer := grpc.NewServer()
-	worldv1.RegisterWorldServiceServer(grpcServer, rpc.NewServer(service))
-	grpc_health_v1.RegisterHealthServer(grpcServer, health.NewServer())
-	go func() {
-		log.Printf("game-server gRPC listening on %s", grpcAddress)
-		if err := grpcServer.Serve(listener); err != nil {
-			log.Fatal(err)
-		}
-	}()
-	log.Printf("game-server listening on %s", address)
-	log.Fatal(server.ListenAndServe())
+	defer cleanup()
+	if err := app.Run(); err != nil {
+		log.NewHelper(logger).Fatal(err)
+	}
+}
+
+func newApp(config *conf.Config, logger log.Logger, httpServer *kratoshttp.Server, grpcServer *kratosgrpc.Server) *kratos.App {
+	return kratos.New(
+		kratos.Name(serviceName),
+		kratos.Version(config.Server.Version),
+		kratos.Logger(logger),
+		kratos.Server(httpServer, grpcServer),
+	)
 }

@@ -7,6 +7,8 @@ import { WorldServiceService } from './generated/services/WorldServiceService'
 OpenAPI.WITH_CREDENTIALS = true
 OpenAPI.CREDENTIALS = 'include'
 
+let commandExpectation: { lifeNumber: number; stateVersion: number } | null = null
+
 export type Position = { x: number; y: number }
 
 export type Health = { status: 'ok'; service: string; version: string }
@@ -66,30 +68,47 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-const command = <T>(path: string, body: unknown, key = crypto.randomUUID()) =>
-  request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': key } })
+const rememberState = (state: RoleState) => {
+  commandExpectation = { lifeNumber: state.life_number, stateVersion: state.state_version }
+  return state
+}
+
+const command = <T>(path: string, body: unknown, key = crypto.randomUUID()) => {
+  if (!commandExpectation) throw new Error('请先刷新角色状态')
+  return request<T>(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Idempotency-Key': key,
+      'X-Expected-Life-Number': String(commandExpectation.lifeNumber),
+      'X-Expected-State-Version': String(commandExpectation.stateVersion),
+    },
+  })
+}
+
+const stateCommand = async (path: string, body: unknown) => rememberState(await command<RoleState>(path, body))
 
 export const api = {
   health: () => request<Health>('/api/v1/healthz'),
-  register: (account: string, password: string, role_name: string) => command<RoleState>('/api/v1/auth/register', { account, password, role_name }),
-  login: (account: string, password: string) => command<RoleState>('/api/v1/auth/login', { account, password }),
-  logout: () => request<void>('/api/v1/auth/logout', { method: 'POST', body: '{}' }),
-  state: async () => contractState(await WorldServiceService.worldServiceGetState({})),
+  register: async (account: string, password: string, role_name: string) => rememberState(await request<RoleState>('/api/v1/auth/register', { method: 'POST', body: JSON.stringify({ account, password, role_name }) })),
+  login: async (account: string, password: string) => rememberState(await request<RoleState>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ account, password }) })),
+  logout: async () => { await request<void>('/api/v1/auth/logout', { method: 'POST', body: '{}' }); commandExpectation = null },
+  state: async () => rememberState(contractState(await WorldServiceService.worldServiceGetState({}))),
   bounds: async () => contractBounds(await WorldServiceService.worldServiceGetWorldBounds({})),
-  move: (x: number, y: number) => command<RoleState>('/api/v1/movement/move', { x, y }),
-  stop: () => command<RoleState>('/api/v1/movement/stop', {}),
+  move: (x: number, y: number) => stateCommand('/api/v1/movement/move', { x, y }),
+  stop: () => stateCommand('/api/v1/movement/stop', {}),
   scan: () => command<ScanResult>('/api/v1/scan', {}),
-  transfer: (target_id: string, amount_minutes: number) => command<RoleState>('/api/v1/cultivation/transfer', { target_id, amount_minutes }),
-  seize: (target_id: string) => command<RoleState>('/api/v1/cultivation/seize', { target_id }),
-  reincarnate: (position?: Position) => command<RoleState>('/api/v1/reincarnate', position ? position : { random: true }),
+  transfer: (target_id: string, amount_minutes: number) => stateCommand('/api/v1/cultivation/transfer', { target_id, amount_minutes }),
+  seize: (target_id: string) => stateCommand('/api/v1/cultivation/seize', { target_id }),
+  reincarnate: (position?: Position) => stateCommand('/api/v1/reincarnate', position ? position : { random: true }),
   events: () => request<{ events: WorldEvent[] }>('/api/v1/events'),
   conversations: () => request<{ conversations: Conversation[] }>('/api/v1/conversations'),
   requestConversation: (target_id: string) => command<Conversation>('/api/v1/conversations', { target_id }),
   respondConversation: (id: string, action: 'accept' | 'reject' | 'ignore') => command<Conversation>(`/api/v1/conversations/${id}/respond`, { action }),
   sendMessage: (id: string, content: string) => command(`/api/v1/conversations/${id}/messages`, { content }),
   closeConversation: (id: string) => command<Conversation>(`/api/v1/conversations/${id}/close`, {}),
-  rotateMCPKey: () => request<{ api_key: string }>('/api/v1/mcp-key/rotate', { method: 'POST', body: '{}' }),
-  revokeMCPKey: () => request<void>('/api/v1/mcp-key/revoke', { method: 'POST', body: '{}' }),
+  rotateMCPKey: async () => { const result = await request<{ api_key: string }>('/api/v1/mcp-key/rotate', { method: 'POST', body: '{}' }); await api.state(); return result },
+  revokeMCPKey: async () => { await request<void>('/api/v1/mcp-key/revoke', { method: 'POST', body: '{}' }); await api.state() },
 }
 
 function isRPCStatus(response: v1RoleState | v1WorldBounds | rpcStatus): response is rpcStatus {

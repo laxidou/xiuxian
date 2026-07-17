@@ -4,5 +4,7 @@
 /* eslint-disable */
 export type v1StopRequest = {
     idempotencyKey?: string;
+    expectedLifeNumber?: string;
+    expectedStateVersion?: string;
 };
 

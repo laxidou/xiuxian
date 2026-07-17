@@ -5,7 +5,10 @@ repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
 
 hash_generated() {
-  find gen/go api/openapi web/src/generated -type f -print0 |
+  {
+    find gen/go api/openapi web/src/generated -type f -print0
+    printf '%s\0' cmd/game-server/wire_gen.go
+  } |
     sort -z |
     xargs -0 shasum -a 256 |
     shasum -a 256

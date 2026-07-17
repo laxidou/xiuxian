@@ -164,6 +164,16 @@ func (g *gateway) callToolRPC(w http.ResponseWriter, request rpcRequest, authori
 	if key == "" {
 		key = "mcp-" + strings.Trim(string(request.ID), `"`)
 	}
+	var expectedLifeNumber, expectedStateVersion int64
+	if toolRequiresExpectation(request.Params.Name) {
+		var lifeOK, versionOK bool
+		expectedLifeNumber, lifeOK = integerArgument(request.Params.Arguments, "expected_life_number")
+		expectedStateVersion, versionOK = integerArgument(request.Params.Arguments, "expected_state_version")
+		if !lifeOK || !versionOK || expectedLifeNumber <= 0 || expectedStateVersion <= 0 {
+			writeRPCError(w, request.ID, -32602, "expected_life_number and expected_state_version are required", http.StatusOK)
+			return
+		}
+	}
 	var result proto.Message
 	var err error
 	switch request.Params.Name {
@@ -172,7 +182,7 @@ func (g *gateway) callToolRPC(w http.ResponseWriter, request rpcRequest, authori
 	case "get_world_bounds":
 		result, err = g.rpc.GetWorldBounds(ctx, &worldv1.GetWorldBoundsRequest{})
 	case "scan":
-		result, err = g.rpc.Scan(ctx, &worldv1.ScanRequest{})
+		result, err = g.rpc.Scan(ctx, &worldv1.ScanRequest{ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "move":
 		x, xOK := numberArgument(request.Params.Arguments, "x")
 		y, yOK := numberArgument(request.Params.Arguments, "y")
@@ -180,33 +190,33 @@ func (g *gateway) callToolRPC(w http.ResponseWriter, request rpcRequest, authori
 			writeRPCError(w, request.ID, -32602, "x and y are required", http.StatusOK)
 			return
 		}
-		result, err = g.rpc.Move(ctx, &worldv1.MoveRequest{IdempotencyKey: key, Target: &worldv1.Position{XMilliunits: int64(math.Round(x * 1000)), YMilliunits: int64(math.Round(y * 1000))}})
+		result, err = g.rpc.Move(ctx, &worldv1.MoveRequest{IdempotencyKey: key, Target: &worldv1.Position{XMilliunits: int64(math.Round(x * 1000)), YMilliunits: int64(math.Round(y * 1000))}, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "stop":
-		result, err = g.rpc.Stop(ctx, &worldv1.StopRequest{IdempotencyKey: key})
+		result, err = g.rpc.Stop(ctx, &worldv1.StopRequest{IdempotencyKey: key, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "recent_events":
 		result, err = g.rpc.ListRecentEvents(ctx, &worldv1.ListRecentEventsRequest{Limit: 50})
 	case "list_conversations":
 		result, err = g.rpc.ListConversations(ctx, &worldv1.ListConversationsRequest{})
 	case "request_conversation":
-		result, err = g.rpc.RequestConversation(ctx, &worldv1.RequestConversationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id")})
+		result, err = g.rpc.RequestConversation(ctx, &worldv1.RequestConversationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id"), ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "respond_conversation":
-		result, err = g.rpc.RespondConversation(ctx, &worldv1.RespondConversationRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id"), Action: stringArgument(request.Params.Arguments, "action")})
+		result, err = g.rpc.RespondConversation(ctx, &worldv1.RespondConversationRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id"), Action: stringArgument(request.Params.Arguments, "action"), ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "send_conversation_message":
-		result, err = g.rpc.SendConversationMessage(ctx, &worldv1.SendConversationMessageRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id"), Content: stringArgument(request.Params.Arguments, "content")})
+		result, err = g.rpc.SendConversationMessage(ctx, &worldv1.SendConversationMessageRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id"), Content: stringArgument(request.Params.Arguments, "content"), ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "close_conversation":
-		result, err = g.rpc.CloseConversation(ctx, &worldv1.CloseConversationRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id")})
+		result, err = g.rpc.CloseConversation(ctx, &worldv1.CloseConversationRequest{IdempotencyKey: key, ConversationId: stringArgument(request.Params.Arguments, "conversation_id"), ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "transfer_cultivation":
 		amount, ok := integerArgument(request.Params.Arguments, "amount_minutes")
 		if !ok {
 			writeRPCError(w, request.ID, -32602, "amount_minutes is required", http.StatusOK)
 			return
 		}
-		result, err = g.rpc.TransferCultivation(ctx, &worldv1.TransferCultivationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id"), AmountMinutes: amount})
+		result, err = g.rpc.TransferCultivation(ctx, &worldv1.TransferCultivationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id"), AmountMinutes: amount, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "seize_cultivation":
-		result, err = g.rpc.SeizeCultivation(ctx, &worldv1.SeizeCultivationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id")})
+		result, err = g.rpc.SeizeCultivation(ctx, &worldv1.SeizeCultivationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id"), ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "reincarnate":
 		random, _ := request.Params.Arguments["random"].(bool)
-		reincarnate := &worldv1.ReincarnateRequest{IdempotencyKey: key, Random: random}
+		reincarnate := &worldv1.ReincarnateRequest{IdempotencyKey: key, Random: random, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion}
 		if !random {
 			x, xOK := numberArgument(request.Params.Arguments, "x")
 			y, yOK := numberArgument(request.Params.Arguments, "y")
@@ -231,6 +241,15 @@ func (g *gateway) callToolRPC(w http.ResponseWriter, request rpcRequest, authori
 		return
 	}
 	writeRPCResult(w, request.ID, map[string]any{"content": []map[string]string{{"type": "text", "text": string(payload)}}, "isError": false})
+}
+
+func toolRequiresExpectation(name string) bool {
+	switch name {
+	case "scan", "move", "stop", "request_conversation", "respond_conversation", "send_conversation_message", "close_conversation", "transfer_cultivation", "seize_cultivation", "reincarnate":
+		return true
+	default:
+		return false
+	}
 }
 
 func stringArgument(arguments map[string]any, key string) string {
@@ -259,21 +278,23 @@ func tools() []tool {
 	numberField := map[string]any{"type": "number"}
 	integerField := map[string]any{"type": "integer", "minimum": 1}
 	keyField := map[string]any{"type": "string", "description": "Retry-stable idempotency key"}
+	expectedLifeField := map[string]any{"type": "integer", "minimum": 1, "description": "Life number observed before issuing the command"}
+	expectedVersionField := map[string]any{"type": "integer", "minimum": 1, "description": "State version observed before issuing the command"}
 	return []tool{
 		{Name: "get_state", Description: "Read the authoritative current role state", InputSchema: object(nil)},
 		{Name: "get_world_bounds", Description: "Read the explored world bounds", InputSchema: object(nil)},
-		{Name: "scan", Description: "Actively scan with current sense radius", InputSchema: object(nil)},
-		{Name: "move", Description: "Start or replace continuous movement", InputSchema: object(map[string]any{"x": numberField, "y": numberField, "idempotency_key": keyField}, "x", "y")},
-		{Name: "stop", Description: "Stop at the authoritative current position", InputSchema: object(map[string]any{"idempotency_key": keyField})},
+		{Name: "scan", Description: "Actively scan with current sense radius", InputSchema: object(map[string]any{"expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "expected_life_number", "expected_state_version")},
+		{Name: "move", Description: "Start or replace continuous movement", InputSchema: object(map[string]any{"x": numberField, "y": numberField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "x", "y", "expected_life_number", "expected_state_version")},
+		{Name: "stop", Description: "Stop at the authoritative current position", InputSchema: object(map[string]any{"idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "expected_life_number", "expected_state_version")},
 		{Name: "recent_events", Description: "Read durable recent events", InputSchema: object(nil)},
 		{Name: "list_conversations", Description: "List conversations and untrusted role messages", InputSchema: object(nil)},
-		{Name: "request_conversation", Description: "Request conversation with a sensed role", InputSchema: object(map[string]any{"target_id": stringField, "idempotency_key": keyField}, "target_id")},
-		{Name: "respond_conversation", Description: "Accept, reject, or ignore an incoming conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "action": map[string]any{"type": "string", "enum": []string{"accept", "reject", "ignore"}}, "idempotency_key": keyField}, "conversation_id", "action")},
-		{Name: "send_conversation_message", Description: "Send untrusted role content in an accepted conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "content": stringField, "idempotency_key": keyField}, "conversation_id", "content")},
-		{Name: "close_conversation", Description: "Close a conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "idempotency_key": keyField}, "conversation_id")},
-		{Name: "transfer_cultivation", Description: "Transfer positive whole cultivation minutes", InputSchema: object(map[string]any{"target_id": stringField, "amount_minutes": integerField, "idempotency_key": keyField}, "target_id", "amount_minutes")},
-		{Name: "seize_cultivation", Description: "夺功 from a lower-realm role at the exact same coordinate", InputSchema: object(map[string]any{"target_id": stringField, "idempotency_key": keyField}, "target_id")},
-		{Name: "reincarnate", Description: "Reincarnate at an in-bounds coordinate or randomly", InputSchema: object(map[string]any{"x": numberField, "y": numberField, "random": map[string]any{"type": "boolean"}, "idempotency_key": keyField})},
+		{Name: "request_conversation", Description: "Request conversation with a sensed role", InputSchema: object(map[string]any{"target_id": stringField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "target_id", "expected_life_number", "expected_state_version")},
+		{Name: "respond_conversation", Description: "Accept, reject, or ignore an incoming conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "action": map[string]any{"type": "string", "enum": []string{"accept", "reject", "ignore"}}, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "conversation_id", "action", "expected_life_number", "expected_state_version")},
+		{Name: "send_conversation_message", Description: "Send untrusted role content in an accepted conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "content": stringField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "conversation_id", "content", "expected_life_number", "expected_state_version")},
+		{Name: "close_conversation", Description: "Close a conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "conversation_id", "expected_life_number", "expected_state_version")},
+		{Name: "transfer_cultivation", Description: "Transfer positive whole cultivation minutes", InputSchema: object(map[string]any{"target_id": stringField, "amount_minutes": integerField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "target_id", "amount_minutes", "expected_life_number", "expected_state_version")},
+		{Name: "seize_cultivation", Description: "夺功 from a lower-realm role at the exact same coordinate", InputSchema: object(map[string]any{"target_id": stringField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "target_id", "expected_life_number", "expected_state_version")},
+		{Name: "reincarnate", Description: "Reincarnate at an in-bounds coordinate or randomly", InputSchema: object(map[string]any{"x": numberField, "y": numberField, "random": map[string]any{"type": "boolean"}, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "expected_life_number", "expected_state_version")},
 	}
 }
 

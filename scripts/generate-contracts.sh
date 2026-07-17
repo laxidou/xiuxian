@@ -10,5 +10,6 @@ mkdir -p api/openapi
 
 buf lint
 buf generate
+wire ./cmd/game-server
 
 (cd web && npm run generate:api)
