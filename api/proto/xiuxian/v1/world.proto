@@ -8,6 +8,9 @@ import "google/protobuf/empty.proto";
 option go_package = "xiuxian/gen/go/xiuxian/v1;xiuxianv1";
 
 service WorldService {
+  rpc GetGameRules(GetGameRulesRequest) returns (GameRules) {
+    option (google.api.http) = { get: "/game-rules" };
+  }
   rpc GetState(GetStateRequest) returns (RoleState) {
     option (google.api.http) = { get: "/state" };
   }
@@ -19,6 +22,9 @@ service WorldService {
   }
   rpc Move(MoveRequest) returns (RoleState) {
     option (google.api.http) = { post: "/movements" body: "*" };
+  }
+  rpc MoveDirection(MoveDirectionRequest) returns (RoleState) {
+    option (google.api.http) = { post: "/directional-movements" body: "*" };
   }
   rpc Stop(StopRequest) returns (RoleState) {
     option (google.api.http) = { post: "/movement-stops" body: "*" };
@@ -88,6 +94,7 @@ message AuthResponse { RoleState state = 1; }
 message RotateMCPKeyResponse { string api_key = 1; }
 
 message GetStateRequest {}
+message GetGameRulesRequest {}
 message GetWorldBoundsRequest {}
 message ScanRequest {
   int64 expected_life_number = 1;
@@ -115,6 +122,35 @@ message RoleState {
   string movement_state = 13;
   int64 state_version = 14;
   int32 rule_version = 15;
+  string movement_mode = 16;
+  string movement_direction = 17;
+  int64 movement_speed_setting = 18;
+  int64 actual_movement_speed = 19;
+}
+
+message GameRuleSection {
+  string id = 1;
+  string title = 2;
+  string body = 3;
+}
+
+message RealmRule {
+  int32 level = 1;
+  string name = 2;
+  int64 cultivation_threshold_millis = 3;
+  int64 lifespan_millis = 4;
+  int64 speed = 5;
+  int64 sense_radius = 6;
+}
+
+message GameRules {
+  int32 rule_version = 1;
+  string title = 2;
+  string summary = 3;
+  repeated GameRuleSection sections = 4;
+  repeated RealmRule realms = 5;
+  string ai_rules = 6;
+  string canonical_url = 7;
 }
 
 message WorldBounds {
@@ -151,6 +187,22 @@ message MoveRequest {
   Position target = 2;
   int64 expected_life_number = 3;
   int64 expected_state_version = 4;
+}
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_UP = 1;
+  DIRECTION_DOWN = 2;
+  DIRECTION_LEFT = 3;
+  DIRECTION_RIGHT = 4;
+}
+
+message MoveDirectionRequest {
+  string idempotency_key = 1;
+  Direction direction = 2;
+  int64 speed = 3;
+  int64 expected_life_number = 4;
+  int64 expected_state_version = 5;
 }
 
 message StopRequest {

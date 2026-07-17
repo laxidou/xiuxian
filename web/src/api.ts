@@ -2,6 +2,8 @@ import { OpenAPI } from './generated/core/OpenAPI'
 import type { v1AuthResponse } from './generated/models/v1AuthResponse'
 import type { v1Conversation } from './generated/models/v1Conversation'
 import type { v1ConversationMessage } from './generated/models/v1ConversationMessage'
+import { v1Direction } from './generated/models/v1Direction'
+import type { v1GameRules } from './generated/models/v1GameRules'
 import type { rpcStatus } from './generated/models/rpcStatus'
 import type { v1RoleState } from './generated/models/v1RoleState'
 import type { v1ScanResponse } from './generated/models/v1ScanResponse'
@@ -33,8 +35,22 @@ export type RoleState = {
   sense_radius: number
   position: Position
   movement_state: 'idle' | 'moving'
+  movement_mode: 'idle' | 'target' | 'direction'
+  movement_direction?: 'up' | 'down' | 'left' | 'right'
+  movement_speed_setting: number
+  actual_movement_speed: number
   state_version: number
   rule_version: number
+}
+
+export type GameRules = {
+  rule_version: number
+  title: string
+  summary: string
+  canonical_url: string
+  ai_rules: string
+  sections: Array<{ id: string; title: string; body: string }>
+  realms: Array<{ level: number; name: string; cultivation_threshold: number; lifespan_seconds: number; speed: number; sense_radius: number }>
 }
 
 export type WorldEvent = {
@@ -94,6 +110,7 @@ const idempotent = () => ({ idempotencyKey: crypto.randomUUID(), ...expectation(
 
 export const api = {
   health: () => request<Health>('/healthz'),
+  gameRules: async () => contractGameRules(unwrap(await WorldServiceService.worldServiceGetGameRules())),
   register: async (account: string, password: string, roleName: string) => rememberState(contractAuthState(await AuthServiceService.authServiceRegister({ account, password, roleName }))),
   login: async (account: string, password: string) => rememberState(contractAuthState(await AuthServiceService.authServiceLogin({ account, password }))),
   logout: async () => { unwrap(await AuthServiceService.authServiceLogout()); commandExpectation = null },
@@ -102,6 +119,9 @@ export const api = {
   move: async (x: number, y: number) => rememberState(contractState(unwrap(await WorldServiceService.worldServiceMove({
     ...idempotent(),
     target: { xMilliunits: String(Math.round(x * 1000)), yMilliunits: String(Math.round(y * 1000)) },
+  })))),
+  moveDirection: async (direction: 'up' | 'down' | 'left' | 'right', speed: number) => rememberState(contractState(unwrap(await WorldServiceService.worldServiceMoveDirection({
+    ...idempotent(), direction: directionContract[direction], speed: String(speed),
   })))),
   stop: async () => rememberState(contractState(unwrap(await WorldServiceService.worldServiceStop(idempotent())))),
   scan: async () => contractScan(unwrap(await WorldServiceService.worldServiceScan(expectation()))),
@@ -124,8 +144,15 @@ export const api = {
     await api.state()
     return { api_key: result.apiKey ?? '' }
   },
-  revokeMCPKey: async () => { unwrap(await AuthServiceService.authServiceRevokeMcpKey()); await api.state() },
+  revokeMCPKey: async () => { unwrap(await AuthServiceService.authServiceRevokeMcpKey()); await api.state(); return true },
 }
+
+const directionContract = {
+  up: v1Direction.DIRECTION_UP,
+  down: v1Direction.DIRECTION_DOWN,
+  left: v1Direction.DIRECTION_LEFT,
+  right: v1Direction.DIRECTION_RIGHT,
+} as const
 
 function isRPCStatus(response: object): response is rpcStatus {
   return 'code' in response || ('message' in response && !('id' in response))
@@ -157,8 +184,31 @@ function contractState(response: v1RoleState): RoleState {
     sense_radius: Number(response.senseRadius ?? 0),
     position: { x: Number(response.position?.xMilliunits ?? 0) / 1000, y: Number(response.position?.yMilliunits ?? 0) / 1000 },
     movement_state: response.movementState as RoleState['movement_state'],
+    movement_mode: (response.movementMode || (response.movementState === 'moving' ? 'target' : 'idle')) as RoleState['movement_mode'],
+    movement_direction: response.movementDirection ? response.movementDirection as RoleState['movement_direction'] : undefined,
+    movement_speed_setting: Number(response.movementSpeedSetting ?? 0),
+    actual_movement_speed: Number(response.actualMovementSpeed ?? 0),
     state_version: Number(response.stateVersion ?? 0),
     rule_version: response.ruleVersion ?? 0,
+  }
+}
+
+function contractGameRules(response: v1GameRules): GameRules {
+  return {
+    rule_version: response.ruleVersion ?? 0,
+    title: response.title ?? '游戏说明',
+    summary: response.summary ?? '',
+    canonical_url: response.canonicalUrl ?? '/rules',
+    ai_rules: response.aiRules ?? '',
+    sections: (response.sections ?? []).map((section) => ({ id: section.id ?? '', title: section.title ?? '', body: section.body ?? '' })),
+    realms: (response.realms ?? []).map((realm) => ({
+      level: realm.level ?? 0,
+      name: realm.name ?? '',
+      cultivation_threshold: Number(realm.cultivationThresholdMillis ?? 0) / 60000,
+      lifespan_seconds: Number(realm.lifespanMillis ?? 0) / 1000,
+      speed: Number(realm.speed ?? 0),
+      sense_radius: Number(realm.senseRadius ?? 0),
+    })),
   }
 }
 

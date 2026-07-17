@@ -108,9 +108,7 @@ func (s *Service) restoreLocked(payload []byte) error {
 	s.roleNames = snapshot.RoleNames
 	s.roles = snapshot.Roles
 	for _, role := range s.roles {
-		if role.RuleVersion == 0 {
-			role.RuleVersion = rules.Version
-		}
+		role.RuleVersion = rules.Version
 	}
 	s.idempotency = snapshot.Idempotency
 	s.events = snapshot.Events

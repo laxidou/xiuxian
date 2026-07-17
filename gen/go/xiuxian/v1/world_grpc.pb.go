@@ -20,10 +20,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	WorldService_GetGameRules_FullMethodName            = "/xiuxian.v1.WorldService/GetGameRules"
 	WorldService_GetState_FullMethodName                = "/xiuxian.v1.WorldService/GetState"
 	WorldService_GetWorldBounds_FullMethodName          = "/xiuxian.v1.WorldService/GetWorldBounds"
 	WorldService_Scan_FullMethodName                    = "/xiuxian.v1.WorldService/Scan"
 	WorldService_Move_FullMethodName                    = "/xiuxian.v1.WorldService/Move"
+	WorldService_MoveDirection_FullMethodName           = "/xiuxian.v1.WorldService/MoveDirection"
 	WorldService_Stop_FullMethodName                    = "/xiuxian.v1.WorldService/Stop"
 	WorldService_TransferCultivation_FullMethodName     = "/xiuxian.v1.WorldService/TransferCultivation"
 	WorldService_SeizeCultivation_FullMethodName        = "/xiuxian.v1.WorldService/SeizeCultivation"
@@ -40,10 +42,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WorldServiceClient interface {
+	GetGameRules(ctx context.Context, in *GetGameRulesRequest, opts ...grpc.CallOption) (*GameRules, error)
 	GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*RoleState, error)
 	GetWorldBounds(ctx context.Context, in *GetWorldBoundsRequest, opts ...grpc.CallOption) (*WorldBounds, error)
 	Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (*ScanResponse, error)
 	Move(ctx context.Context, in *MoveRequest, opts ...grpc.CallOption) (*RoleState, error)
+	MoveDirection(ctx context.Context, in *MoveDirectionRequest, opts ...grpc.CallOption) (*RoleState, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*RoleState, error)
 	TransferCultivation(ctx context.Context, in *TransferCultivationRequest, opts ...grpc.CallOption) (*RoleState, error)
 	SeizeCultivation(ctx context.Context, in *SeizeCultivationRequest, opts ...grpc.CallOption) (*RoleState, error)
@@ -62,6 +66,16 @@ type worldServiceClient struct {
 
 func NewWorldServiceClient(cc grpc.ClientConnInterface) WorldServiceClient {
 	return &worldServiceClient{cc}
+}
+
+func (c *worldServiceClient) GetGameRules(ctx context.Context, in *GetGameRulesRequest, opts ...grpc.CallOption) (*GameRules, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GameRules)
+	err := c.cc.Invoke(ctx, WorldService_GetGameRules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *worldServiceClient) GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*RoleState, error) {
@@ -98,6 +112,16 @@ func (c *worldServiceClient) Move(ctx context.Context, in *MoveRequest, opts ...
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RoleState)
 	err := c.cc.Invoke(ctx, WorldService_Move_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *worldServiceClient) MoveDirection(ctx context.Context, in *MoveDirectionRequest, opts ...grpc.CallOption) (*RoleState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RoleState)
+	err := c.cc.Invoke(ctx, WorldService_MoveDirection_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -208,10 +232,12 @@ func (c *worldServiceClient) CloseConversation(ctx context.Context, in *CloseCon
 // All implementations must embed UnimplementedWorldServiceServer
 // for forward compatibility.
 type WorldServiceServer interface {
+	GetGameRules(context.Context, *GetGameRulesRequest) (*GameRules, error)
 	GetState(context.Context, *GetStateRequest) (*RoleState, error)
 	GetWorldBounds(context.Context, *GetWorldBoundsRequest) (*WorldBounds, error)
 	Scan(context.Context, *ScanRequest) (*ScanResponse, error)
 	Move(context.Context, *MoveRequest) (*RoleState, error)
+	MoveDirection(context.Context, *MoveDirectionRequest) (*RoleState, error)
 	Stop(context.Context, *StopRequest) (*RoleState, error)
 	TransferCultivation(context.Context, *TransferCultivationRequest) (*RoleState, error)
 	SeizeCultivation(context.Context, *SeizeCultivationRequest) (*RoleState, error)
@@ -232,6 +258,9 @@ type WorldServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedWorldServiceServer struct{}
 
+func (UnimplementedWorldServiceServer) GetGameRules(context.Context, *GetGameRulesRequest) (*GameRules, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetGameRules not implemented")
+}
 func (UnimplementedWorldServiceServer) GetState(context.Context, *GetStateRequest) (*RoleState, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetState not implemented")
 }
@@ -243,6 +272,9 @@ func (UnimplementedWorldServiceServer) Scan(context.Context, *ScanRequest) (*Sca
 }
 func (UnimplementedWorldServiceServer) Move(context.Context, *MoveRequest) (*RoleState, error) {
 	return nil, status.Error(codes.Unimplemented, "method Move not implemented")
+}
+func (UnimplementedWorldServiceServer) MoveDirection(context.Context, *MoveDirectionRequest) (*RoleState, error) {
+	return nil, status.Error(codes.Unimplemented, "method MoveDirection not implemented")
 }
 func (UnimplementedWorldServiceServer) Stop(context.Context, *StopRequest) (*RoleState, error) {
 	return nil, status.Error(codes.Unimplemented, "method Stop not implemented")
@@ -293,6 +325,24 @@ func RegisterWorldServiceServer(s grpc.ServiceRegistrar, srv WorldServiceServer)
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&WorldService_ServiceDesc, srv)
+}
+
+func _WorldService_GetGameRules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGameRulesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorldServiceServer).GetGameRules(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorldService_GetGameRules_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorldServiceServer).GetGameRules(ctx, req.(*GetGameRulesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _WorldService_GetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -363,6 +413,24 @@ func _WorldService_Move_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WorldServiceServer).Move(ctx, req.(*MoveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorldService_MoveDirection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveDirectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorldServiceServer).MoveDirection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorldService_MoveDirection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorldServiceServer).MoveDirection(ctx, req.(*MoveDirectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -555,6 +623,10 @@ var WorldService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*WorldServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "GetGameRules",
+			Handler:    _WorldService_GetGameRules_Handler,
+		},
+		{
 			MethodName: "GetState",
 			Handler:    _WorldService_GetState_Handler,
 		},
@@ -569,6 +641,10 @@ var WorldService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Move",
 			Handler:    _WorldService_Move_Handler,
+		},
+		{
+			MethodName: "MoveDirection",
+			Handler:    _WorldService_MoveDirection_Handler,
 		},
 		{
 			MethodName: "Stop",

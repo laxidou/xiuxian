@@ -30,20 +30,32 @@ type persistedPosition struct {
 }
 
 type persistedRole struct {
-	ID              string
-	Account         string
-	Name            string
-	LifeNumber      int64
-	Status          string
-	LifeStartedAt   time.Time
-	CultivationBase int64
-	CultivationAt   time.Time
-	LastSettledAt   time.Time
-	NextDeathAt     time.Time
-	Position        persistedPosition
-	StateVersion    int64
-	MCPKeyHash      [32]byte
-	RuleVersion     int32
+	ID                    string
+	Account               string
+	Name                  string
+	LifeNumber            int64
+	Status                string
+	LifeStartedAt         time.Time
+	CultivationBase       int64
+	CultivationAt         time.Time
+	LastSettledAt         time.Time
+	NextDeathAt           time.Time
+	Position              persistedPosition
+	StateVersion          int64
+	MCPKeyHash            [32]byte
+	RuleVersion           int32
+	Trajectory            *persistedTrajectory
+	TrajectoryCultivation int64
+}
+
+type persistedTrajectory struct {
+	Mode         string
+	Start        persistedPosition
+	Target       persistedPosition
+	Direction    string
+	StartedAt    time.Time
+	Speed        int64
+	DesiredSpeed int64
 }
 
 type persistedOpportunity struct {
@@ -280,6 +292,37 @@ func mirrorNormalizedState(ctx context.Context, tx *gorm.DB, payload []byte) err
 				state_version=EXCLUDED.state_version
 		`, role.ID, role.LifeStartedAt, role.CultivationBase, role.CultivationAt, role.LastSettledAt, nextDeath, role.Position.X, role.Position.Y, role.StateVersion).Error; err != nil {
 			return fmt.Errorf("mirror life: %w", err)
+		}
+		if role.Trajectory == nil {
+			if err := tx.WithContext(ctx).Exec(`DELETE FROM trajectories WHERE role_id = $1`, role.ID).Error; err != nil {
+				return fmt.Errorf("remove settled trajectory: %w", err)
+			}
+		} else {
+			mode := role.Trajectory.Mode
+			if mode == "" {
+				mode = "target"
+			}
+			var targetX, targetY, direction, desiredSpeed any
+			if mode == "direction" {
+				direction = role.Trajectory.Direction
+				desiredSpeed = role.Trajectory.DesiredSpeed
+			} else {
+				targetX = role.Trajectory.Target.X
+				targetY = role.Trajectory.Target.Y
+			}
+			if err := tx.WithContext(ctx).Exec(`
+				INSERT INTO trajectories (role_id,mode,start_x,start_y,target_x,target_y,direction,started_at,speed_basis,desired_speed,cultivation_basis,state_version)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+				ON CONFLICT (role_id) DO UPDATE SET
+					mode=EXCLUDED.mode,start_x=EXCLUDED.start_x,start_y=EXCLUDED.start_y,
+					target_x=EXCLUDED.target_x,target_y=EXCLUDED.target_y,direction=EXCLUDED.direction,
+					started_at=EXCLUDED.started_at,speed_basis=EXCLUDED.speed_basis,
+					desired_speed=EXCLUDED.desired_speed,cultivation_basis=EXCLUDED.cultivation_basis,
+					state_version=EXCLUDED.state_version
+			`, role.ID, mode, role.Trajectory.Start.X, role.Trajectory.Start.Y, targetX, targetY, direction,
+				role.Trajectory.StartedAt, role.Trajectory.Speed, desiredSpeed, role.TrajectoryCultivation, role.StateVersion).Error; err != nil {
+				return fmt.Errorf("mirror trajectory: %w", err)
+			}
 		}
 	}
 	for _, opportunity := range world.Opportunities {

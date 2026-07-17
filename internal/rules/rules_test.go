@@ -103,6 +103,39 @@ func TestNaturalTravelDistanceUsesNewSpeedAfterBreakthrough(t *testing.T) {
 	}
 }
 
+func TestDirectionalTrajectoryMovesForeverAlongOneCardinalAxis(t *testing.T) {
+	start := rules.Position{X: rules.Units(2), Y: rules.Units(-1)}
+	tests := []struct {
+		direction rules.Direction
+		want      rules.Position
+	}{
+		{rules.DirectionUp, rules.Position{X: rules.Units(2), Y: rules.Units(2.5)}},
+		{rules.DirectionDown, rules.Position{X: rules.Units(2), Y: rules.Units(-4.5)}},
+		{rules.DirectionLeft, rules.Position{X: rules.Units(-1.5), Y: rules.Units(-1)}},
+		{rules.DirectionRight, rules.Position{X: rules.Units(5.5), Y: rules.Units(-1)}},
+	}
+	for _, test := range tests {
+		trajectory := rules.Trajectory{Mode: rules.TrajectoryDirection, Start: start, Direction: test.direction}
+		position, arrived := trajectory.PositionAfterDistance(3.5)
+		if arrived || position != test.want {
+			t.Fatalf("direction %s position = %+v arrived=%v, want %+v false", test.direction, position, arrived, test.want)
+		}
+	}
+}
+
+func TestTravelDistanceUsesDesiredSpeedAsRealmBoundedSetting(t *testing.T) {
+	start := rules.Points(2) - rules.Cultivation(time.Second/time.Millisecond)
+	if got := rules.TravelDistance(start, 2*time.Second, 1); got != 2 {
+		t.Fatalf("desired-speed distance = %v, want 2", got)
+	}
+	if got := rules.TravelDistance(start, 2*time.Second, 10); got != 3 {
+		t.Fatalf("realm-bounded distance = %v, want 3", got)
+	}
+	if got := rules.TravelDistance(start, 2*time.Second, 2); got != 3 {
+		t.Fatalf("desired speed after breakthrough = %v, want 3", got)
+	}
+}
+
 func TestOpportunitySenseUsesCombinedRadius(t *testing.T) {
 	role := rules.Position{X: rules.Units(0), Y: rules.Units(0)}
 	opportunity := rules.Position{X: rules.Units(8), Y: rules.Units(0)}

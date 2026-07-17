@@ -24,6 +24,21 @@ type WorldService struct {
 	limiter biz.RateLimiter
 }
 
+func (s *WorldService) GetGameRules(ctx context.Context, _ *worldv1.GetGameRulesRequest) (*worldv1.GameRules, error) {
+	guide, err := s.usecase.Rules(ctx)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	response := &worldv1.GameRules{RuleVersion: guide.RuleVersion, Title: guide.Title, Summary: guide.Summary, AiRules: guide.AIRules, CanonicalUrl: guide.CanonicalURL}
+	for _, section := range guide.Sections {
+		response.Sections = append(response.Sections, &worldv1.GameRuleSection{Id: section.ID, Title: section.Title, Body: section.Body})
+	}
+	for _, realm := range guide.Realms {
+		response.Realms = append(response.Realms, &worldv1.RealmRule{Level: int32(realm.Level), Name: realm.Name, CultivationThresholdMillis: realm.CultivationThresholdMillis, LifespanMillis: realm.LifespanMillis, Speed: realm.Speed, SenseRadius: realm.SenseRadius})
+	}
+	return response, nil
+}
+
 func NewWorldService(usecase *biz.WorldUsecase, limiter biz.RateLimiter) *WorldService {
 	return &WorldService{usecase: usecase, limiter: limiter}
 }
@@ -87,6 +102,18 @@ func (s *WorldService) Move(ctx context.Context, request *worldv1.MoveRequest) (
 		return nil, kratoserrors.BadRequest("TARGET_REQUIRED", "target is required")
 	}
 	state, err := s.usecase.Move(ctx, roleID, request.IdempotencyKey, rules.Position{X: rules.Coordinate(request.Target.XMilliunits), Y: rules.Coordinate(request.Target.YMilliunits)}, commandExpectation(request.ExpectedLifeNumber, request.ExpectedStateVersion))
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return RoleState(state), nil
+}
+
+func (s *WorldService) MoveDirection(ctx context.Context, request *worldv1.MoveDirectionRequest) (*worldv1.RoleState, error) {
+	roleID, err := s.authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	state, err := s.usecase.MoveDirection(ctx, roleID, request.IdempotencyKey, directionFromProto(request.Direction), request.Speed, commandExpectation(request.ExpectedLifeNumber, request.ExpectedStateVersion))
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -271,7 +298,7 @@ func (s *WorldService) enforceRateLimit(ctx context.Context, scope, subject stri
 }
 
 func RoleState(state biz.State) *worldv1.RoleState {
-	return &worldv1.RoleState{Id: state.ID, Name: state.Name, LifeNumber: state.LifeNumber, Status: string(state.Status), CultivationMillis: int64(math.Round(state.Cultivation * 60000)), RealmLevel: int32(state.RealmLevel), RealmName: state.Realm, AgeMillis: int64(math.Round(state.AgeSeconds * 1000)), LifespanMillis: int64(math.Round(state.LifespanSeconds * 1000)), Speed: state.Speed, SenseRadius: state.SenseRadius, Position: protoPosition(state.Position), MovementState: string(state.MovementState), StateVersion: state.StateVersion, RuleVersion: state.RuleVersion}
+	return &worldv1.RoleState{Id: state.ID, Name: state.Name, LifeNumber: state.LifeNumber, Status: string(state.Status), CultivationMillis: int64(math.Round(state.Cultivation * 60000)), RealmLevel: int32(state.RealmLevel), RealmName: state.Realm, AgeMillis: int64(math.Round(state.AgeSeconds * 1000)), LifespanMillis: int64(math.Round(state.LifespanSeconds * 1000)), Speed: state.Speed, SenseRadius: state.SenseRadius, Position: protoPosition(state.Position), MovementState: string(state.MovementState), StateVersion: state.StateVersion, RuleVersion: state.RuleVersion, MovementMode: state.MovementMode, MovementDirection: state.MovementDirection, MovementSpeedSetting: state.MovementSpeedSetting, ActualMovementSpeed: state.ActualMovementSpeed}
 }
 
 func WorldBounds(bounds biz.Bounds) *worldv1.WorldBounds {
@@ -282,6 +309,21 @@ func protoPosition(position biz.PublicPosition) *worldv1.Position {
 	return &worldv1.Position{XMilliunits: milliunits(position.X), YMilliunits: milliunits(position.Y)}
 }
 func milliunits(value float64) int64 { return int64(math.Round(value * 1000)) }
+
+func directionFromProto(direction worldv1.Direction) rules.Direction {
+	switch direction {
+	case worldv1.Direction_DIRECTION_UP:
+		return rules.DirectionUp
+	case worldv1.Direction_DIRECTION_DOWN:
+		return rules.DirectionDown
+	case worldv1.Direction_DIRECTION_LEFT:
+		return rules.DirectionLeft
+	case worldv1.Direction_DIRECTION_RIGHT:
+		return rules.DirectionRight
+	default:
+		return ""
+	}
+}
 
 func conversation(value biz.Conversation) *worldv1.Conversation {
 	result := &worldv1.Conversation{Id: value.ID, RequesterId: value.RequesterID, RecipientId: value.RecipientID, Status: string(value.Status), CreatedAtUnixMillis: value.CreatedAt, UpdatedAtUnixMillis: value.UpdatedAt}

@@ -231,6 +231,38 @@
         ]
       }
     },
+    "/directional-movements": {
+      "post": {
+        "operationId": "WorldService_MoveDirection",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RoleState"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1MoveDirectionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
     "/events": {
       "get": {
         "operationId": "WorldService_ListRecentEvents",
@@ -264,6 +296,28 @@
             "format": "int32"
           }
         ],
+        "tags": [
+          "WorldService"
+        ]
+      }
+    },
+    "/game-rules": {
+      "get": {
+        "operationId": "WorldService_GetGameRules",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GameRules"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
         "tags": [
           "WorldService"
         ]
@@ -694,6 +748,66 @@
         }
       }
     },
+    "v1Direction": {
+      "type": "string",
+      "enum": [
+        "DIRECTION_UNSPECIFIED",
+        "DIRECTION_UP",
+        "DIRECTION_DOWN",
+        "DIRECTION_LEFT",
+        "DIRECTION_RIGHT"
+      ],
+      "default": "DIRECTION_UNSPECIFIED"
+    },
+    "v1GameRuleSection": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      }
+    },
+    "v1GameRules": {
+      "type": "object",
+      "properties": {
+        "ruleVersion": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1GameRuleSection"
+          }
+        },
+        "realms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1RealmRule"
+          }
+        },
+        "aiRules": {
+          "type": "string"
+        },
+        "canonicalUrl": {
+          "type": "string"
+        }
+      }
+    },
     "v1ListConversationsResponse": {
       "type": "object",
       "properties": {
@@ -726,6 +840,29 @@
         },
         "password": {
           "type": "string"
+        }
+      }
+    },
+    "v1MoveDirectionRequest": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/definitions/v1Direction"
+        },
+        "speed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedLifeNumber": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expectedStateVersion": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
@@ -768,6 +905,34 @@
           "format": "int64"
         },
         "yMilliunits": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1RealmRule": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "name": {
+          "type": "string"
+        },
+        "cultivationThresholdMillis": {
+          "type": "string",
+          "format": "int64"
+        },
+        "lifespanMillis": {
+          "type": "string",
+          "format": "int64"
+        },
+        "speed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "senseRadius": {
           "type": "string",
           "format": "int64"
         }
@@ -906,6 +1071,20 @@
         "ruleVersion": {
           "type": "integer",
           "format": "int32"
+        },
+        "movementMode": {
+          "type": "string"
+        },
+        "movementDirection": {
+          "type": "string"
+        },
+        "movementSpeedSetting": {
+          "type": "string",
+          "format": "int64"
+        },
+        "actualMovementSpeed": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },

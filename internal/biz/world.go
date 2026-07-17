@@ -20,6 +20,7 @@ type WorldRepository interface {
 // cases.
 type WorldAuthority interface {
 	Clock() Clock
+	Rules(context.Context) (GameRules, error)
 	Register(context.Context, string, string, string) (string, State, error)
 	Login(context.Context, string, string) (string, State, error)
 	AuthenticateSession(context.Context, string) (string, error)
@@ -30,6 +31,7 @@ type WorldAuthority interface {
 	State(context.Context, string) (State, error)
 	SettleDeadline(context.Context, string, int64) (bool, error)
 	Move(context.Context, string, string, rules.Position, CommandExpectation) (State, error)
+	MoveDirection(context.Context, string, string, rules.Direction, int64, CommandExpectation) (State, error)
 	Stop(context.Context, string, string, CommandExpectation) (State, error)
 	Scan(context.Context, string, CommandExpectation) (ScanResult, error)
 	Transfer(context.Context, string, string, string, int64, CommandExpectation) (State, error)
@@ -72,6 +74,13 @@ func NewWorldUsecase(authority WorldAuthority, logger log.Logger) *WorldUsecase 
 }
 
 func (uc *WorldUsecase) Clock() Clock { return uc.authority.Clock() }
+
+func (uc *WorldUsecase) Rules(ctx context.Context) (GameRules, error) {
+	if err := ctx.Err(); err != nil {
+		return GameRules{}, err
+	}
+	return uc.authority.Rules(ctx)
+}
 
 func (uc *WorldUsecase) Register(ctx context.Context, account, password, roleName string) (string, State, error) {
 	if err := ctx.Err(); err != nil {
@@ -145,6 +154,13 @@ func (uc *WorldUsecase) Move(ctx context.Context, roleID, idempotencyKey string,
 		return State{}, err
 	}
 	return uc.authority.Move(ctx, roleID, idempotencyKey, target, expectation)
+}
+
+func (uc *WorldUsecase) MoveDirection(ctx context.Context, roleID, idempotencyKey string, direction rules.Direction, speed int64, expectation CommandExpectation) (State, error) {
+	if err := ctx.Err(); err != nil {
+		return State{}, err
+	}
+	return uc.authority.MoveDirection(ctx, roleID, idempotencyKey, direction, speed, expectation)
 }
 
 func (uc *WorldUsecase) Stop(ctx context.Context, roleID, idempotencyKey string, expectation CommandExpectation) (State, error) {

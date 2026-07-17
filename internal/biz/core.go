@@ -86,21 +86,25 @@ type Role struct {
 }
 
 type State struct {
-	ID              string         `json:"id"`
-	Name            string         `json:"name"`
-	LifeNumber      int64          `json:"life_number"`
-	Status          RoleStatus     `json:"status"`
-	Cultivation     float64        `json:"cultivation"`
-	RealmLevel      int            `json:"realm_level"`
-	Realm           string         `json:"realm"`
-	AgeSeconds      float64        `json:"age_seconds"`
-	LifespanSeconds float64        `json:"lifespan_seconds"`
-	Speed           int64          `json:"speed"`
-	SenseRadius     int64          `json:"sense_radius"`
-	Position        PublicPosition `json:"position"`
-	MovementState   MovementState  `json:"movement_state"`
-	StateVersion    int64          `json:"state_version"`
-	RuleVersion     int32          `json:"rule_version"`
+	ID                   string         `json:"id"`
+	Name                 string         `json:"name"`
+	LifeNumber           int64          `json:"life_number"`
+	Status               RoleStatus     `json:"status"`
+	Cultivation          float64        `json:"cultivation"`
+	RealmLevel           int            `json:"realm_level"`
+	Realm                string         `json:"realm"`
+	AgeSeconds           float64        `json:"age_seconds"`
+	LifespanSeconds      float64        `json:"lifespan_seconds"`
+	Speed                int64          `json:"speed"`
+	SenseRadius          int64          `json:"sense_radius"`
+	Position             PublicPosition `json:"position"`
+	MovementState        MovementState  `json:"movement_state"`
+	MovementMode         string         `json:"movement_mode"`
+	MovementDirection    string         `json:"movement_direction,omitempty"`
+	MovementSpeedSetting int64          `json:"movement_speed_setting,omitempty"`
+	ActualMovementSpeed  int64          `json:"actual_movement_speed,omitempty"`
+	StateVersion         int64          `json:"state_version"`
+	RuleVersion          int32          `json:"rule_version"`
 }
 
 type PublicPosition struct {
@@ -498,7 +502,51 @@ func (s *Service) Move(ctx context.Context, roleID, idempotencyKey string, targe
 	position := rules.Position{X: rules.Units(current.Position.X), Y: rules.Units(current.Position.Y)}
 	role.Position = position
 	realm := rules.RealmFor(s.cultivationLocked(role, now))
-	role.Trajectory = &rules.Trajectory{Start: position, Target: target, StartedAt: now, Speed: realm.Speed}
+	role.Trajectory = &rules.Trajectory{Mode: rules.TrajectoryTarget, Start: position, Target: target, StartedAt: now, Speed: realm.Speed}
+	role.TrajectoryCultivation = s.cultivationLocked(role, now)
+	role.StateVersion++
+	result := s.stateLocked(role, now)
+	s.rememberIdempotencyLocked(roleID, idempotencyKey, result)
+	if err := s.persistLocked(ctx); err != nil {
+		return State{}, err
+	}
+	return result, nil
+}
+
+func (s *Service) MoveDirection(ctx context.Context, roleID, idempotencyKey string, direction rules.Direction, desiredSpeed int64, expectation CommandExpectation) (State, error) {
+	if strings.TrimSpace(idempotencyKey) == "" {
+		return State{}, ErrIdempotencyKey
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	role, ok := s.roles[roleID]
+	if !ok {
+		return State{}, ErrUnauthenticated
+	}
+	if previous, ok := s.idempotencyResultLocked(roleID, idempotencyKey); ok {
+		return previous, nil
+	}
+	if !validDirection(direction) || desiredSpeed <= 0 {
+		return State{}, ErrInvalid
+	}
+	if err := validateCommandExpectation(role, expectation); err != nil {
+		return State{}, err
+	}
+	now := s.authoritativeNowLocked(ctx, role)
+	current := s.stateLocked(role, now)
+	if role.Status != RoleAlive {
+		return State{}, ErrNotAlive
+	}
+	realm := rules.RealmFor(s.cultivationLocked(role, now))
+	if desiredSpeed > realm.Speed {
+		return State{}, ErrInvalid
+	}
+	position := positionOfState(current)
+	role.Position = position
+	role.Trajectory = &rules.Trajectory{
+		Mode: rules.TrajectoryDirection, Start: position, Direction: direction,
+		StartedAt: now, Speed: realm.Speed, DesiredSpeed: desiredSpeed,
+	}
 	role.TrajectoryCultivation = s.cultivationLocked(role, now)
 	role.StateVersion++
 	result := s.stateLocked(role, now)
@@ -558,7 +606,7 @@ func (s *Service) Scan(ctx context.Context, roleID string, expectation CommandEx
 	if scanner.Status != RoleAlive {
 		return ScanResult{}, ErrNotAlive
 	}
-	if !scanner.LastScanAt.IsZero() && now.Sub(scanner.LastScanAt) < 5*time.Second {
+	if !scanner.LastScanAt.IsZero() && now.Sub(scanner.LastScanAt) < time.Second {
 		return ScanResult{}, ErrRateLimited
 	}
 	scanner.LastScanAt = now
@@ -1068,7 +1116,7 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 	movementState := MovementIdle
 	if role.Status == RoleAlive && role.Trajectory != nil {
 		var arrived bool
-		travelled := rules.NaturalTravelDistance(role.TrajectoryCultivation, now.Sub(role.Trajectory.StartedAt))
+		travelled := rules.TravelDistance(role.TrajectoryCultivation, now.Sub(role.Trajectory.StartedAt), role.Trajectory.DesiredSpeed)
 		position, arrived = role.Trajectory.PositionAfterDistance(travelled)
 		if arrived {
 			role.Position = position
@@ -1094,7 +1142,7 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 		}
 		deathPosition := role.Position
 		if role.Trajectory != nil {
-			travelled := rules.NaturalTravelDistance(role.TrajectoryCultivation, deathAt.Sub(role.Trajectory.StartedAt))
+			travelled := rules.TravelDistance(role.TrajectoryCultivation, deathAt.Sub(role.Trajectory.StartedAt), role.Trajectory.DesiredSpeed)
 			deathPosition, _ = role.Trajectory.PositionAfterDistance(travelled)
 		}
 		s.killLocked(role, deathAt, deathCultivation, deathPosition, "lifespan", true)
@@ -1123,23 +1171,39 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 		age = 0
 		life = rules.DeriveLife(0, 0)
 	}
+	movementMode := "idle"
+	movementDirection := ""
+	var movementSpeedSetting, actualMovementSpeed int64
+	if role.Status == RoleAlive && role.Trajectory != nil {
+		movementMode = string(role.Trajectory.ModeOrTarget())
+		movementDirection = string(role.Trajectory.Direction)
+		movementSpeedSetting = role.Trajectory.DesiredSpeed
+		actualMovementSpeed = life.Realm.Speed
+		if movementSpeedSetting > 0 && movementSpeedSetting < actualMovementSpeed {
+			actualMovementSpeed = movementSpeedSetting
+		}
+	}
 	role.LastSettledAt = now
 	return State{
-		ID:              role.ID,
-		Name:            role.Name,
-		LifeNumber:      role.LifeNumber,
-		Status:          role.Status,
-		Cultivation:     cultivation.Points(),
-		RealmLevel:      life.Realm.Level,
-		Realm:           life.Realm.Name,
-		AgeSeconds:      age.Seconds(),
-		LifespanSeconds: life.Realm.Lifespan.Seconds(),
-		Speed:           life.Realm.Speed,
-		SenseRadius:     life.Realm.SenseRadius,
-		Position:        PublicPosition{X: position.X.Units(), Y: position.Y.Units()},
-		MovementState:   movementState,
-		StateVersion:    role.StateVersion,
-		RuleVersion:     role.RuleVersion,
+		ID:                   role.ID,
+		Name:                 role.Name,
+		LifeNumber:           role.LifeNumber,
+		Status:               role.Status,
+		Cultivation:          cultivation.Points(),
+		RealmLevel:           life.Realm.Level,
+		Realm:                life.Realm.Name,
+		AgeSeconds:           age.Seconds(),
+		LifespanSeconds:      life.Realm.Lifespan.Seconds(),
+		Speed:                life.Realm.Speed,
+		SenseRadius:          life.Realm.SenseRadius,
+		Position:             PublicPosition{X: position.X.Units(), Y: position.Y.Units()},
+		MovementState:        movementState,
+		MovementMode:         movementMode,
+		MovementDirection:    movementDirection,
+		MovementSpeedSetting: movementSpeedSetting,
+		ActualMovementSpeed:  actualMovementSpeed,
+		StateVersion:         role.StateVersion,
+		RuleVersion:          role.RuleVersion,
 	}
 }
 
@@ -1308,10 +1372,22 @@ func (s *Service) rebaseTrajectoryLocked(role *Role, position rules.Position, no
 	if role.Trajectory == nil {
 		return
 	}
-	target := role.Trajectory.Target
+	trajectory := *role.Trajectory
 	role.Position = position
-	role.Trajectory = &rules.Trajectory{Start: position, Target: target, StartedAt: now, Speed: rules.RealmFor(cultivation).Speed}
+	trajectory.Start = position
+	trajectory.StartedAt = now
+	trajectory.Speed = rules.RealmFor(cultivation).Speed
+	role.Trajectory = &trajectory
 	role.TrajectoryCultivation = cultivation
+}
+
+func validDirection(direction rules.Direction) bool {
+	switch direction {
+	case rules.DirectionUp, rules.DirectionDown, rules.DirectionLeft, rules.DirectionRight:
+		return true
+	default:
+		return false
+	}
 }
 
 func durationSeconds(value float64) time.Duration {

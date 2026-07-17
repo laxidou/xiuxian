@@ -45,6 +45,7 @@ done
 [ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$base_url/test/clock/advance?milliseconds=1")" = "404" ]
 
 curl -fsS "$base_url/" | grep -q '<div id="root"></div>'
+curl -fsS "$base_url/game-rules" | jq -e '.ruleVersion == 2 and (.realms | length) == 32 and (.aiRules | contains("get_state"))' >/dev/null
 
 suffix=$(date +%s)-$$
 account="smoke-$suffix"
@@ -68,7 +69,11 @@ jq -n '{}' |
     "$base_url/mcp-key-rotations" >"$response_file"
 api_key=$(jq -er '.apiKey | select(startswith("xiu_"))' "$response_file")
 
-jq -n '{jsonrpc:"2.0", id:1, method:"tools/call", params:{name:"get_state", arguments:{}}}' |
+jq -n '{jsonrpc:"2.0", id:1, method:"tools/call", params:{name:"get_game_rules", arguments:{}}}' |
+  curl -fsS -H "Authorization: Bearer $api_key" -H 'Content-Type: application/json' --data-binary @- "$base_url/mcp" |
+  jq -e '.result.isError == false and (.result.content[0].text | fromjson | .rule_version == 2)' >/dev/null
+
+jq -n '{jsonrpc:"2.0", id:2, method:"tools/call", params:{name:"get_state", arguments:{}}}' |
   curl -fsS -H "Authorization: Bearer $api_key" -H 'Content-Type: application/json' --data-binary @- "$base_url/mcp" |
   jq -e --arg role_id "$role_id" '.result.isError == false and (.result.content[0].text | fromjson | .id == $role_id)' >/dev/null
 
@@ -88,9 +93,17 @@ jq -n --arg key "$move_key" --arg life "$life_number" --arg version "$state_vers
     "$base_url/movements" |
   jq -e --arg first_version "$first_version" '.stateVersion == $first_version' >/dev/null
 
+direction_key="smoke-direction-$suffix"
+jq -n --arg key "$direction_key" --arg life "$life_number" --arg version "$first_version" \
+  '{idempotencyKey:$key,direction:"DIRECTION_UP",speed:"1",expectedLifeNumber:$life,expectedStateVersion:$version}' |
+  curl -fsS -b "$cookie_jar" -H 'Content-Type: application/json' --data-binary @- \
+    "$base_url/directional-movements" |
+  jq -e '.movementMode == "direction" and .movementDirection == "up" and .movementSpeedSetting == "1"' >/dev/null
+
 database_counts=$(docker compose exec -T postgres psql -U xiuxian -d xiuxian -Atc \
   "SELECT (SELECT count(*) FROM world_snapshots),(SELECT count(*) FROM accounts WHERE account_identifier='$account'),(SELECT count(*) FROM roles WHERE id='$role_id');")
 [ "$database_counts" = "1|1|1" ]
+[ "$(docker compose exec -T postgres psql -U xiuxian -d xiuxian -Atc "SELECT mode || '|' || direction || '|' || desired_speed FROM trajectories WHERE role_id='$role_id';")" = "direction|up|1" ]
 [ "$(docker compose exec -T redis redis-cli ping)" = "PONG" ]
 
 attempt=0
@@ -110,7 +123,7 @@ until [ "$(docker compose exec -T redis redis-cli zcard world:death_deadlines)" 
   sleep 1
 done
 
-jq -n '{jsonrpc:"2.0", id:2, method:"tools/call", params:{name:"get_state", arguments:{}}}' |
+jq -n '{jsonrpc:"2.0", id:3, method:"tools/call", params:{name:"get_state", arguments:{}}}' |
   curl -fsS -H "Authorization: Bearer $api_key" -H 'Content-Type: application/json' --data-binary @- "$base_url/mcp" |
   jq -e --arg role_id "$role_id" '.result.isError == false and (.result.content[0].text | fromjson | .id == $role_id)' >/dev/null
 

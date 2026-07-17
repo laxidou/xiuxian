@@ -19,5 +19,9 @@ export type v1RoleState = {
     movementState?: string;
     stateVersion?: string;
     ruleVersion?: number;
+    movementMode?: string;
+    movementDirection?: string;
+    movementSpeedSetting?: string;
+    actualMovementSpeed?: string;
 };
 

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	Version                  = int32(1)
+	Version                  = int32(2)
 	cultivationUnitsPerPoint = int64(time.Minute / time.Millisecond)
 	coordinateScale          = int64(1000)
 	opportunityDuration      = 24 * time.Hour
@@ -154,11 +154,37 @@ func ValidateTransfer(current, amount Cultivation, age time.Duration) TransferVa
 	}
 }
 
+type TrajectoryMode string
+
+const (
+	TrajectoryTarget    TrajectoryMode = "target"
+	TrajectoryDirection TrajectoryMode = "direction"
+)
+
+type Direction string
+
+const (
+	DirectionUp    Direction = "up"
+	DirectionDown  Direction = "down"
+	DirectionLeft  Direction = "left"
+	DirectionRight Direction = "right"
+)
+
 type Trajectory struct {
-	Start     Position
-	Target    Position
-	StartedAt time.Time
-	Speed     int64
+	Mode         TrajectoryMode
+	Start        Position
+	Target       Position
+	Direction    Direction
+	StartedAt    time.Time
+	Speed        int64
+	DesiredSpeed int64
+}
+
+func (t Trajectory) ModeOrTarget() TrajectoryMode {
+	if t.Mode == "" {
+		return TrajectoryTarget
+	}
+	return t.Mode
 }
 
 func (t Trajectory) PositionAt(now time.Time) (Position, bool) {
@@ -169,6 +195,21 @@ func (t Trajectory) PositionAt(now time.Time) (Position, bool) {
 }
 
 func (t Trajectory) PositionAfterDistance(travelledUnits float64) (Position, bool) {
+	if t.ModeOrTarget() == TrajectoryDirection {
+		distance := Coordinate(math.Round(travelledUnits * float64(coordinateScale)))
+		switch t.Direction {
+		case DirectionUp:
+			return Position{X: t.Start.X, Y: t.Start.Y + distance}, false
+		case DirectionDown:
+			return Position{X: t.Start.X, Y: t.Start.Y - distance}, false
+		case DirectionLeft:
+			return Position{X: t.Start.X - distance, Y: t.Start.Y}, false
+		case DirectionRight:
+			return Position{X: t.Start.X + distance, Y: t.Start.Y}, false
+		default:
+			return t.Start, false
+		}
+	}
 	dx := float64(t.Target.X - t.Start.X)
 	dy := float64(t.Target.Y - t.Start.Y)
 	distance := math.Hypot(dx, dy)
@@ -183,6 +224,10 @@ func (t Trajectory) PositionAfterDistance(travelledUnits float64) (Position, boo
 }
 
 func NaturalTravelDistance(cultivationAtStart Cultivation, elapsed time.Duration) float64 {
+	return TravelDistance(cultivationAtStart, elapsed, 0)
+}
+
+func TravelDistance(cultivationAtStart Cultivation, elapsed time.Duration, desiredSpeed int64) float64 {
 	if elapsed <= 0 {
 		return 0
 	}
@@ -198,7 +243,11 @@ func NaturalTravelDistance(cultivationAtStart Cultivation, elapsed time.Duration
 				segmentMillis = toThreshold
 			}
 		}
-		distance += float64(realm.Speed) * float64(segmentMillis) / 1000
+		speed := realm.Speed
+		if desiredSpeed > 0 && desiredSpeed < speed {
+			speed = desiredSpeed
+		}
+		distance += float64(speed) * float64(segmentMillis) / 1000
 		cultivation += Cultivation(segmentMillis)
 		remainingMillis -= segmentMillis
 	}

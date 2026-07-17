@@ -5,10 +5,41 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"xiuxian/internal/rules"
 )
 
 type captureStore struct {
 	payload []byte
+}
+
+func TestDirectionalMovementRestoresFromAuthoritativeSnapshot(t *testing.T) {
+	store := &captureStore{}
+	startedAt := time.UnixMilli(1_700_000_000_000)
+	service, err := NewPersistentService(context.Background(), NewManualClock(startedAt), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, state, err := service.Register(context.Background(), "snapshot-direction", "a sufficiently long password", "长风")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.MoveDirection(context.Background(), state.ID, "direction-snapshot", rules.DirectionUp, 1, CommandExpectation{LifeNumber: state.LifeNumber, StateVersion: state.StateVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := NewPersistentService(context.Background(), NewManualClock(startedAt.Add(2*time.Second)), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := restored.State(context.Background(), state.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Position.X != 0 || current.Position.Y != 2 || current.MovementMode != "direction" || current.MovementDirection != "up" {
+		t.Fatalf("restored direction state = %#v", current)
+	}
 }
 
 func (store *captureStore) Load(context.Context) ([]byte, error) {

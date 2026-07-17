@@ -6,8 +6,10 @@ import type { rpcStatus } from '../models/rpcStatus';
 import type { v1CloseConversationRequest } from '../models/v1CloseConversationRequest';
 import type { v1Conversation } from '../models/v1Conversation';
 import type { v1ConversationMessage } from '../models/v1ConversationMessage';
+import type { v1GameRules } from '../models/v1GameRules';
 import type { v1ListConversationsResponse } from '../models/v1ListConversationsResponse';
 import type { v1ListRecentEventsResponse } from '../models/v1ListRecentEventsResponse';
+import type { v1MoveDirectionRequest } from '../models/v1MoveDirectionRequest';
 import type { v1MoveRequest } from '../models/v1MoveRequest';
 import type { v1ReincarnateRequest } from '../models/v1ReincarnateRequest';
 import type { v1RequestConversationRequest } from '../models/v1RequestConversationRequest';
@@ -126,6 +128,21 @@ export class WorldServiceService {
         });
     }
     /**
+     * @param body
+     * @returns v1RoleState A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceMoveDirection(
+        body: v1MoveDirectionRequest,
+    ): CancelablePromise<v1RoleState | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/directional-movements',
+            body: body,
+        });
+    }
+    /**
      * @param after
      * @param limit
      * @returns v1ListRecentEventsResponse A successful response.
@@ -143,6 +160,17 @@ export class WorldServiceService {
                 'after': after,
                 'limit': limit,
             },
+        });
+    }
+    /**
+     * @returns v1GameRules A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceGetGameRules(): CancelablePromise<v1GameRules | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/game-rules',
         });
     }
     /**

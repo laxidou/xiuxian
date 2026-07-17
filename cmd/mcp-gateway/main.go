@@ -126,6 +126,7 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"protocolVersion": "2025-03-26",
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
 			"serverInfo":      map[string]any{"name": "xiuxian-mcp", "version": "0.1.0"},
+			"instructions":    "Call get_game_rules before the first state-changing action and whenever the observed rule version changes. Then call get_state and use its latest life_number and state_version.",
 		})
 	case "notifications/initialized":
 		w.WriteHeader(http.StatusNoContent)
@@ -168,6 +169,8 @@ func (g *gateway) callToolRPC(ctx context.Context, w http.ResponseWriter, reques
 	var result proto.Message
 	var err error
 	switch request.Params.Name {
+	case "get_game_rules":
+		result, err = g.rpc.GetGameRules(ctx, &worldv1.GetGameRulesRequest{})
 	case "get_state":
 		result, err = g.rpc.GetState(ctx, &worldv1.GetStateRequest{})
 	case "get_world_bounds":
@@ -182,6 +185,13 @@ func (g *gateway) callToolRPC(ctx context.Context, w http.ResponseWriter, reques
 			return
 		}
 		result, err = g.rpc.Move(ctx, &worldv1.MoveRequest{IdempotencyKey: key, Target: &worldv1.Position{XMilliunits: int64(math.Round(x * 1000)), YMilliunits: int64(math.Round(y * 1000))}, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
+	case "move_direction":
+		speed, ok := integerArgument(request.Params.Arguments, "speed")
+		if !ok {
+			writeRPCError(w, request.ID, -32602, "speed is required", http.StatusOK)
+			return
+		}
+		result, err = g.rpc.MoveDirection(ctx, &worldv1.MoveDirectionRequest{IdempotencyKey: key, Direction: directionArgument(request.Params.Arguments, "direction"), Speed: speed, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "stop":
 		result, err = g.rpc.Stop(ctx, &worldv1.StopRequest{IdempotencyKey: key, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "recent_events":
@@ -236,7 +246,7 @@ func (g *gateway) callToolRPC(ctx context.Context, w http.ResponseWriter, reques
 
 func toolRequiresExpectation(name string) bool {
 	switch name {
-	case "scan", "move", "stop", "request_conversation", "respond_conversation", "send_conversation_message", "close_conversation", "transfer_cultivation", "seize_cultivation", "reincarnate":
+	case "scan", "move", "move_direction", "stop", "request_conversation", "respond_conversation", "send_conversation_message", "close_conversation", "transfer_cultivation", "seize_cultivation", "reincarnate":
 		return true
 	default:
 		return false
@@ -246,6 +256,21 @@ func toolRequiresExpectation(name string) bool {
 func stringArgument(arguments map[string]any, key string) string {
 	value, _ := arguments[key].(string)
 	return value
+}
+
+func directionArgument(arguments map[string]any, key string) worldv1.Direction {
+	switch stringArgument(arguments, key) {
+	case "up":
+		return worldv1.Direction_DIRECTION_UP
+	case "down":
+		return worldv1.Direction_DIRECTION_DOWN
+	case "left":
+		return worldv1.Direction_DIRECTION_LEFT
+	case "right":
+		return worldv1.Direction_DIRECTION_RIGHT
+	default:
+		return worldv1.Direction_DIRECTION_UNSPECIFIED
+	}
 }
 
 func numberArgument(arguments map[string]any, key string) (float64, bool) {
@@ -272,10 +297,12 @@ func tools() []tool {
 	expectedLifeField := map[string]any{"type": "integer", "minimum": 1, "description": "Life number observed before issuing the command"}
 	expectedVersionField := map[string]any{"type": "integer", "minimum": 1, "description": "State version observed before issuing the command"}
 	return []tool{
+		{Name: "get_game_rules", Description: "Read the current versioned authoritative game rules for this human-and-AI controlled role", InputSchema: object(nil)},
 		{Name: "get_state", Description: "Read the authoritative current role state", InputSchema: object(nil)},
 		{Name: "get_world_bounds", Description: "Read the explored world bounds", InputSchema: object(nil)},
-		{Name: "scan", Description: "Actively scan with current sense radius", InputSchema: object(map[string]any{"expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "expected_life_number", "expected_state_version")},
+		{Name: "scan", Description: "Perform one 神识扫描 snapshot; each role may scan at most once per second across Web and MCP, so wait after rate-limit errors", InputSchema: object(map[string]any{"expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "expected_life_number", "expected_state_version")},
 		{Name: "move", Description: "Start or replace continuous movement", InputSchema: object(map[string]any{"x": numberField, "y": numberField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "x", "y", "expected_life_number", "expected_state_version")},
+		{Name: "move_direction", Description: "Move continuously up, down, left, or right at a chosen speed no greater than the current realm speed", InputSchema: object(map[string]any{"direction": map[string]any{"type": "string", "enum": []string{"up", "down", "left", "right"}}, "speed": integerField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "direction", "speed", "expected_life_number", "expected_state_version")},
 		{Name: "stop", Description: "Stop at the authoritative current position", InputSchema: object(map[string]any{"idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "expected_life_number", "expected_state_version")},
 		{Name: "recent_events", Description: "Read durable recent events", InputSchema: object(nil)},
 		{Name: "list_conversations", Description: "List conversations and untrusted role messages", InputSchema: object(nil)},

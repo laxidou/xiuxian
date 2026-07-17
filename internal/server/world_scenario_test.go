@@ -132,6 +132,11 @@ func (c *testClient) translateScenarioRequest(t *testing.T, method, path string,
 		request := command()
 		request["target"] = map[string]any{"xMilliunits": milliunits(input["x"]), "yMilliunits": milliunits(input["y"])}
 		return "/movements", request, "state"
+	case path == "/api/v1/movement/direction":
+		request := command()
+		request["direction"] = "DIRECTION_" + strings.ToUpper(fmt.Sprint(input["direction"]))
+		request["speed"] = fmt.Sprint(input["speed"])
+		return "/directional-movements", request, "state"
 	case path == "/api/v1/movement/stop":
 		return "/movement-stops", command(), "state"
 	case path == "/api/v1/scan":
@@ -313,8 +318,10 @@ func legacyState(value map[string]any) map[string]any {
 		"realm": value["realmName"], "age_seconds": float64(number(value["ageMillis"])) / 1000,
 		"lifespan_seconds": float64(number(value["lifespanMillis"])) / 1000, "speed": number(value["speed"]),
 		"sense_radius": number(value["senseRadius"]), "movement_state": value["movementState"], "state_version": number(value["stateVersion"]),
-		"rule_version": number(value["ruleVersion"]),
-		"position":     map[string]any{"x": units(position["xMilliunits"]), "y": units(position["yMilliunits"])},
+		"rule_version":  number(value["ruleVersion"]),
+		"movement_mode": value["movementMode"], "movement_direction": value["movementDirection"],
+		"movement_speed_setting": number(value["movementSpeedSetting"]), "actual_movement_speed": number(value["actualMovementSpeed"]),
+		"position": map[string]any{"x": units(position["xMilliunits"]), "y": units(position["yMilliunits"])},
 	}
 }
 
@@ -427,6 +434,24 @@ func TestPublicHealthReportsAuthorityVersion(t *testing.T) {
 	health := decode[map[string]string](t, response)
 	if health["status"] != "ok" || health["service"] != "game-server" || health["version"] != "test-version" {
 		t.Fatalf("health response = %#v", health)
+	}
+}
+
+func TestPublicGameRulesMatchTheActiveAuthorityVersion(t *testing.T) {
+	server, _ := newServer(t)
+	response, err := http.Get(server.URL + "/game-rules")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("game rules status = %d, want 200", response.StatusCode)
+	}
+	guide := decode[map[string]any](t, response)
+	if guide["ruleVersion"] != float64(2) || len(guide["sections"].([]any)) < 10 || len(guide["realms"].([]any)) != 32 {
+		t.Fatalf("public game rules = %#v", guide)
+	}
+	if !strings.Contains(fmt.Sprint(guide["aiRules"]), "get_state") || guide["canonicalUrl"] != "/rules" {
+		t.Fatalf("AI rules or canonical URL missing: %#v", guide)
 	}
 }
 
@@ -581,6 +606,98 @@ func TestWorldTimeAndMovementAreDerivedWithoutTickWrites(t *testing.T) {
 	}
 }
 
+func TestRoleCanMoveContinuouslyInCardinalDirectionsAtAChosenSpeed(t *testing.T) {
+	server, clock := newServer(t)
+	client := &testClient{baseURL: server.URL}
+	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "direction-traveller", "password": "a sufficiently long password", "role_name": "御风",
+	}, nil)
+	registered.Body.Close()
+
+	tooFast := client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{
+		"direction": "up", "speed": 2,
+	}, map[string]string{"Idempotency-Key": "direction-too-fast"})
+	if tooFast.StatusCode != http.StatusBadRequest {
+		t.Fatalf("above-cap direction status = %d, want 400", tooFast.StatusCode)
+	}
+	tooFast.Body.Close()
+
+	started := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{
+		"direction": "up", "speed": 1,
+	}, map[string]string{"Idempotency-Key": "direction-up"}))
+	if started["movement_mode"] != "direction" || started["movement_direction"] != "up" || started["movement_speed_setting"] != float64(1) || started["actual_movement_speed"] != float64(1) {
+		t.Fatalf("started direction state = %#v", started)
+	}
+
+	clock.Advance(1500 * time.Millisecond)
+	moving := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	position := moving["position"].(map[string]any)
+	if position["x"] != float64(0) || position["y"] != 1.5 || moving["movement_state"] != "moving" {
+		t.Fatalf("upward state = %#v", moving)
+	}
+
+	turned := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{
+		"direction": "right", "speed": 1,
+	}, map[string]string{"Idempotency-Key": "direction-right"}))
+	if turned["movement_direction"] != "right" {
+		t.Fatalf("turned direction state = %#v", turned)
+	}
+
+	clock.Advance(time.Second)
+	turnedDown := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{
+		"direction": "down", "speed": 1,
+	}, map[string]string{"Idempotency-Key": "direction-down"}))
+	if turnedDown["movement_direction"] != "down" {
+		t.Fatalf("down direction state = %#v", turnedDown)
+	}
+
+	clock.Advance(500 * time.Millisecond)
+	turnedLeft := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{
+		"direction": "left", "speed": 1,
+	}, map[string]string{"Idempotency-Key": "direction-left"}))
+	if turnedLeft["movement_direction"] != "left" {
+		t.Fatalf("left direction state = %#v", turnedLeft)
+	}
+
+	clock.Advance(time.Second)
+	stopped := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/movement/stop", map[string]any{}, map[string]string{"Idempotency-Key": "direction-stop"}))
+	position = stopped["position"].(map[string]any)
+	if position["x"] != float64(0) || position["y"] != float64(1) || stopped["movement_state"] != "idle" || stopped["movement_mode"] != "idle" {
+		t.Fatalf("stopped direction state = %#v", stopped)
+	}
+}
+
+func TestDirectionalMovementEndsAtDeathAndTargetMovementReplacesIt(t *testing.T) {
+	server, clock := newServer(t)
+	client := &testClient{baseURL: server.URL}
+	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "direction-lifecycle", "password": "a sufficiently long password", "role_name": "归途",
+	}, nil)
+	registered.Body.Close()
+
+	started := client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "lifecycle-direction"})
+	started.Body.Close()
+	clock.Advance(time.Second)
+	replaced := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 0, "y": 0}, map[string]string{"Idempotency-Key": "lifecycle-target"}))
+	if replaced["movement_mode"] != "target" {
+		t.Fatalf("target replacement state = %#v", replaced)
+	}
+
+	clock.Advance(time.Second)
+	current := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	if current["movement_mode"] != "idle" || current["position"].(map[string]any)["x"] != float64(0) {
+		t.Fatalf("target replacement arrival = %#v", current)
+	}
+
+	restarted := client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "up", "speed": 1}, map[string]string{"Idempotency-Key": "lifecycle-death"})
+	restarted.Body.Close()
+	clock.Advance(8 * time.Hour)
+	dead := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	if dead["status"] != "pending_reincarnation" || dead["movement_mode"] != "idle" || dead["movement_state"] != "idle" {
+		t.Fatalf("direction state after death = %#v", dead)
+	}
+}
+
 func TestScanTransferAndSeizureShareAuthoritativeState(t *testing.T) {
 	server, clock := newServer(t)
 	high := &testClient{baseURL: server.URL}
@@ -649,6 +766,81 @@ func TestScanTransferAndSeizureShareAuthoritativeState(t *testing.T) {
 	if deadTarget["status"] != "pending_reincarnation" || deadTarget["cultivation"] != float64(0) {
 		t.Fatalf("seized target state = %#v", deadTarget)
 	}
+}
+
+func TestSenseScanAllowsOneSuccessfulSnapshotPerSecond(t *testing.T) {
+	server, clock := newServer(t)
+	client := &testClient{baseURL: server.URL}
+	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "scan-cadence", "password": "a sufficiently long password", "role_name": "观微",
+	}, nil)
+	registered.Body.Close()
+
+	first := client.request(t, http.MethodPost, "/api/v1/scan", map[string]any{}, nil)
+	if first.StatusCode != http.StatusOK {
+		t.Fatalf("first scan status = %d, want 200", first.StatusCode)
+	}
+	first.Body.Close()
+
+	clock.Advance(999 * time.Millisecond)
+	tooSoon := client.request(t, http.MethodPost, "/api/v1/scan", map[string]any{}, nil)
+	if tooSoon.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("scan at 999ms status = %d, want 429", tooSoon.StatusCode)
+	}
+	tooSoon.Body.Close()
+
+	clock.Advance(time.Millisecond)
+	atBoundary := client.request(t, http.MethodPost, "/api/v1/scan", map[string]any{}, nil)
+	if atBoundary.StatusCode != http.StatusOK {
+		t.Fatalf("scan at 1000ms status = %d, want 200", atBoundary.StatusCode)
+	}
+	atBoundary.Body.Close()
+}
+
+func TestSenseScanIntervalIsSharedByWebAndRoleAPIKey(t *testing.T) {
+	server, clock := newServer(t)
+	web := &testClient{baseURL: server.URL}
+	registered := decode[map[string]any](t, web.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "shared-scan", "password": "a sufficiently long password", "role_name": "同观",
+	}, nil))
+	rotated := decode[map[string]any](t, web.request(t, http.MethodPost, "/api/v1/mcp-key/rotate", map[string]any{}, nil))
+	apiKey := rotated["api_key"].(string)
+	registered = decode[map[string]any](t, web.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+
+	first := web.request(t, http.MethodPost, "/api/v1/scan", map[string]any{}, nil)
+	if first.StatusCode != http.StatusOK {
+		t.Fatalf("web scan status = %d", first.StatusCode)
+	}
+	first.Body.Close()
+
+	apiScan := func() *http.Response {
+		body := bytes.NewBufferString(fmt.Sprintf(`{"expectedLifeNumber":"%v","expectedStateVersion":"%v"}`, registered["life_number"], registered["state_version"]))
+		request, err := http.NewRequest(http.MethodPost, server.URL+"/scans", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Authorization", "Bearer "+apiKey)
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+
+	clock.Advance(999 * time.Millisecond)
+	tooSoon := apiScan()
+	if tooSoon.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("API Key scan at 999ms status = %d, want 429", tooSoon.StatusCode)
+	}
+	tooSoon.Body.Close()
+
+	clock.Advance(time.Millisecond)
+	atBoundary := apiScan()
+	if atBoundary.StatusCode != http.StatusOK {
+		t.Fatalf("API Key scan at 1000ms status = %d, want 200", atBoundary.StatusCode)
+	}
+	atBoundary.Body.Close()
 }
 
 func TestNaturalDeathCreatesHiddenOpportunityAndReincarnationIsIdempotent(t *testing.T) {

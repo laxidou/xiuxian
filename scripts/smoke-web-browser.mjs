@@ -231,7 +231,8 @@ class RoleClient {
     const state = await this.refresh()
     if (state.status !== 'pending_reincarnation') return
     this.state = await this.request('POST', '/reincarnations', {
-      random: true,
+      random: false,
+      position: { xMilliunits: '0', yMilliunits: '0' },
       idempotencyKey: `browser-helper-rebirth-${state.lifeNumber}`,
       expectedLifeNumber: state.lifeNumber,
       expectedStateVersion: state.stateVersion,
@@ -247,6 +248,16 @@ async function runJourney(cdp, viewport, suffix, helper) {
     mobile: viewport.mobile,
   })
   await cdp.send('Network.clearBrowserCookies')
+  await cdp.send('Page.navigate', { url: `${baseURL}/rules` })
+  await waitFor(cdp, `document.querySelector('h1')?.textContent.includes('游戏说明') && document.querySelectorAll('tbody tr').length === 32 && document.body.innerText.includes('最快 1 秒') && document.body.innerText.includes('方向移动')`, 'public game rules')
+  const rulesLayout = await cdp.evaluate(`document.documentElement.scrollWidth <= window.innerWidth + 1`)
+  if (!rulesLayout) throw new Error('game rules page overflows the viewport')
+  await cdp.evaluate(`document.querySelector('a[href="#scan"]')?.click()`)
+  await waitFor(cdp, `location.hash === '#scan' && Boolean(document.querySelector('#scan'))`, 'rules chapter anchor')
+  await cdp.evaluate(`history.back()`)
+  await waitFor(cdp, `location.hash === ''`, 'rules chapter back navigation')
+  await clickText(cdp, '复制 AI 规则')
+  await waitFor(cdp, `document.body.innerText.includes('AI 规则已复制') || document.body.innerText.includes('复制失败，请手动选择')`, 'AI rules copy feedback')
   await cdp.send('Page.navigate', { url: baseURL })
   await waitFor(cdp, `document.body?.innerText.includes('创建角色')`, 'auth screen')
 
@@ -276,8 +287,8 @@ async function runJourney(cdp, viewport, suffix, helper) {
     throw new Error(`accessibility/layout assertion failed: ${JSON.stringify(accessible)}`)
   }
 
-  await fillFormInput(cdp, '移动', 'X', '0.001')
-  await fillFormInput(cdp, '移动', 'Y', '0')
+  await fillFormInput(cdp, '移动', '目标 X', '0.001')
+  await fillFormInput(cdp, '移动', '目标 Y', '0')
   await clickText(cdp, '移动')
   await waitFor(cdp, `document.body.innerText.includes('轨迹已更新')`, 'movement accepted')
   const arrived = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=2', { method: 'POST' }).then((response) => response.status)`)
@@ -285,8 +296,71 @@ async function runJourney(cdp, viewport, suffix, helper) {
   await clickText(cdp, '刷新')
   await waitFor(cdp, `document.body.innerText.includes('(0.001, 0)')`, 'movement arrival')
 
-  await clickText(cdp, '主动扫描')
+  await fillLabel(cdp, '设定行进速度', '1')
+  await clickText(cdp, '上')
+  await waitFor(cdp, `document.body.innerText.includes('开始向上')`, 'direction movement accepted')
+  const movedUp = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' }).then((response) => response.status)`)
+  if (movedUp !== 200) throw new Error(`direction movement clock status = ${movedUp}`)
+  await clickText(cdp, '刷新')
+  await waitFor(cdp, `document.body.innerText.includes('(0.001, 1)') && document.body.innerText.includes('上（+Y）')`, 'direction movement position')
+
+  const reachedHigherSpeed = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=120000', { method: 'POST' }).then((response) => response.status)`)
+  if (reachedHigherSpeed !== 200) throw new Error(`speed-change clock status = ${reachedHigherSpeed}`)
+  await clickText(cdp, '刷新')
+  await waitFor(cdp, `document.body.innerText.includes('速度上限') && document.body.innerText.includes('2 / 秒')`, 'higher movement speed cap')
+
+  await fillLabel(cdp, '设定行进速度', '2')
+  await delay(100)
+  await clickText(cdp, '右')
+  await waitFor(cdp, `document.body.innerText.includes('右（+X）') && document.body.innerText.includes('设定 2/秒')`, 'right movement at changed speed')
+  await delay(600)
+  await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' })`)
+  await fillLabel(cdp, '设定行进速度', '1')
+  await delay(100)
+  await clickText(cdp, '右')
+  await waitFor(cdp, `document.body.innerText.includes('右（+X）') && document.body.innerText.includes('设定 1/秒')`, 'same-direction speed replacement')
+  await delay(600)
+  await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' })`)
+  await clickText(cdp, '下')
+  await waitFor(cdp, `document.body.innerText.includes('下（-Y）')`, 'down movement accepted')
+  await delay(600)
+  await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' })`)
+  await clickText(cdp, '左')
+  await waitFor(cdp, `document.body.innerText.includes('左（-X）')`, 'left movement accepted')
+  await delay(600)
+  await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' })`)
+
+  await fillFormInput(cdp, '移动', '目标 X', '0')
+  await fillFormInput(cdp, '移动', '目标 Y', '0')
+  await clickText(cdp, '移动')
+  await waitFor(cdp, `document.body.innerText.includes('轨迹已更新') || Boolean(document.querySelector('.notice.error'))`, 'return movement accepted')
+  const returnError = await cdp.evaluate(`document.querySelector('.notice.error')?.textContent ?? ''`)
+  if (returnError) throw new Error(`return movement failed: ${returnError}`)
+  const returnMillis = await cdp.evaluate(`fetch('/state').then((response) => response.json()).then((state) => Math.ceil(Math.hypot(Number(state.position.xMilliunits), Number(state.position.yMilliunits)) / 1000 / Number(state.speed) * 1000) + 2)`)
+  const returned = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=${returnMillis}', { method: 'POST' }).then((response) => response.status)`)
+  if (returned !== 200) throw new Error(`return movement clock status = ${returned}`)
+  await clickText(cdp, '刷新')
+  await waitFor(cdp, `document.body.innerText.includes('(0, 0)')`, 'returned to helper coordinate')
+
+  await clickText(cdp, '上')
+  await waitFor(cdp, `document.body.innerText.includes('上（+Y）')`, 'direction movement restarted')
+  await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=10', { method: 'POST' })`)
+  await clickText(cdp, '停止')
+  await waitFor(cdp, `document.body.innerText.includes('已停在权威位置')`, 'direction movement stopped')
+
+  const manualScanClock = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' }).then((response) => response.status)`)
+  if (manualScanClock !== 200) throw new Error(`manual scan clock status = ${manualScanClock}`)
+  await waitFor(cdp, `[...document.querySelectorAll('button')].some((button) => button.textContent.trim() === '神识扫描' && !button.disabled)`, 'scan button available')
+  await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' })`)
+  await clickText(cdp, '神识扫描')
+  const disabledImmediately = await cdp.evaluate(`[...document.querySelectorAll('button')].find((button) => button.textContent.trim() === '神识扫描')?.disabled === true`)
+  if (!disabledImmediately) throw new Error('scan button did not enter one-second cooldown')
   await waitFor(cdp, `document.body.innerText.includes('神识所见')`, 'scan result')
+  await waitFor(cdp, `[...document.querySelectorAll('button')].some((button) => button.textContent.trim() === '神识扫描' && !button.disabled)`, 'scan button recovered', 4_000)
+  const scanClock = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' }).then((response) => response.status)`)
+  if (scanClock !== 200) throw new Error(`automatic scan clock status = ${scanClock}`)
+  const manualScanCount = await cdp.evaluate(`performance.getEntriesByType('resource').filter((entry) => entry.name.endsWith('/scans')).length`)
+  await waitFor(cdp, `performance.getEntriesByType('resource').filter((entry) => entry.name.endsWith('/scans')).length > ${manualScanCount}`, 'automatic five-second scan', 8_000)
 
   const browserState = await cdp.evaluate(`fetch('/state').then((response) => response.json())`)
   await fillFormInput(cdp, '请求交谈', '目标 ID', helper.state.id)
@@ -300,7 +374,7 @@ async function runJourney(cdp, viewport, suffix, helper) {
   await waitFor(cdp, `document.body.innerText.includes('accepted')`, 'accepted conversation')
   await delay(2_200)
   const message = `自动化问候-${suffix}`
-  await fillFormInput(cdp, '发送', '玩家消息（不可信内容）', message)
+  await fillFormInput(cdp, '发送', '角色消息（不可信内容）', message)
   await clickText(cdp, '发送')
   await delay(300)
   const messageError = await cdp.evaluate(`document.querySelector('.notice.error')?.textContent ?? ''`)
@@ -312,9 +386,31 @@ async function runJourney(cdp, viewport, suffix, helper) {
   await waitFor(cdp, `document.querySelector('output.secret')?.textContent.startsWith('xiu_') || Boolean(document.querySelector('.notice.error'))`, 'MCP key result')
   const keyError = await cdp.evaluate(`document.querySelector('.notice.error')?.textContent ?? ''`)
   if (keyError) throw new Error(`MCP key rotation failed: ${keyError}`)
+  const apiKey = await cdp.evaluate(`document.querySelector('output.secret')?.textContent ?? ''`)
+  const mcpVerified = await cdp.evaluate(`(async () => {
+    const apiKey = document.querySelector('output.secret')?.textContent ?? ''
+    const call = (id, method, params) => fetch('/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    }).then(async (response) => ({ status: response.status, body: response.status === 204 ? {} : await response.json() }))
+    const initialized = await call(1, 'initialize')
+    const tools = await call(2, 'tools/list')
+    const rules = await call(3, 'tools/call', { name: 'get_game_rules', arguments: {} })
+    const state = await call(4, 'tools/call', { name: 'get_state', arguments: {} })
+    const toolNames = (tools.body.result?.tools ?? []).map((tool) => tool.name)
+    const rulePayload = JSON.parse(rules.body.result?.content?.[0]?.text ?? '{}')
+    const statePayload = JSON.parse(state.body.result?.content?.[0]?.text ?? '{}')
+    return initialized.status === 200 && initialized.body.result?.instructions?.includes('get_game_rules') &&
+      toolNames.includes('get_game_rules') && toolNames.includes('move_direction') &&
+      rulePayload.rule_version === 2 && statePayload.name === ${quote(roleName)}
+  })()`)
+  if (!apiKey.startsWith('xiu_') || !mcpVerified) throw new Error('documented MCP connection flow failed')
   await delay(1_100)
   await clickText(cdp, '撤销 Key')
   await waitFor(cdp, `!document.querySelector('output.secret') && document.body.innerText.includes('Key 已撤销')`, 'MCP key revocation')
+  const revokedDenied = await cdp.evaluate(`fetch('/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: ${quote(`Bearer ${apiKey}`)} }, body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'get_state', arguments: {} } }) }).then((response) => response.json()).then((body) => body.result?.isError === true)`)
+  if (!revokedDenied) throw new Error('revoked MCP key still performed get_state')
 
   const advanced = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=28800000', { method: 'POST' }).then((response) => response.status)`)
   if (advanced !== 200) throw new Error(`test clock status = ${advanced}`)

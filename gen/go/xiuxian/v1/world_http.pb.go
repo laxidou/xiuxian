@@ -21,11 +21,13 @@ var _ = binding.EncodeURL
 const _ = http.SupportPackageIsVersion1
 
 const OperationWorldServiceCloseConversation = "/xiuxian.v1.WorldService/CloseConversation"
+const OperationWorldServiceGetGameRules = "/xiuxian.v1.WorldService/GetGameRules"
 const OperationWorldServiceGetState = "/xiuxian.v1.WorldService/GetState"
 const OperationWorldServiceGetWorldBounds = "/xiuxian.v1.WorldService/GetWorldBounds"
 const OperationWorldServiceListConversations = "/xiuxian.v1.WorldService/ListConversations"
 const OperationWorldServiceListRecentEvents = "/xiuxian.v1.WorldService/ListRecentEvents"
 const OperationWorldServiceMove = "/xiuxian.v1.WorldService/Move"
+const OperationWorldServiceMoveDirection = "/xiuxian.v1.WorldService/MoveDirection"
 const OperationWorldServiceReincarnate = "/xiuxian.v1.WorldService/Reincarnate"
 const OperationWorldServiceRequestConversation = "/xiuxian.v1.WorldService/RequestConversation"
 const OperationWorldServiceRespondConversation = "/xiuxian.v1.WorldService/RespondConversation"
@@ -37,11 +39,13 @@ const OperationWorldServiceTransferCultivation = "/xiuxian.v1.WorldService/Trans
 
 type WorldServiceHTTPServer interface {
 	CloseConversation(context.Context, *CloseConversationRequest) (*Conversation, error)
+	GetGameRules(context.Context, *GetGameRulesRequest) (*GameRules, error)
 	GetState(context.Context, *GetStateRequest) (*RoleState, error)
 	GetWorldBounds(context.Context, *GetWorldBoundsRequest) (*WorldBounds, error)
 	ListConversations(context.Context, *ListConversationsRequest) (*ListConversationsResponse, error)
 	ListRecentEvents(context.Context, *ListRecentEventsRequest) (*ListRecentEventsResponse, error)
 	Move(context.Context, *MoveRequest) (*RoleState, error)
+	MoveDirection(context.Context, *MoveDirectionRequest) (*RoleState, error)
 	Reincarnate(context.Context, *ReincarnateRequest) (*RoleState, error)
 	RequestConversation(context.Context, *RequestConversationRequest) (*Conversation, error)
 	RespondConversation(context.Context, *RespondConversationRequest) (*Conversation, error)
@@ -54,10 +58,12 @@ type WorldServiceHTTPServer interface {
 
 func RegisterWorldServiceHTTPServer(s *http.Server, srv WorldServiceHTTPServer) {
 	r := s.Route("/")
+	r.GET("/game-rules", _WorldService_GetGameRules0_HTTP_Handler(srv))
 	r.GET("/state", _WorldService_GetState0_HTTP_Handler(srv))
 	r.GET("/world/bounds", _WorldService_GetWorldBounds0_HTTP_Handler(srv))
 	r.POST("/scans", _WorldService_Scan0_HTTP_Handler(srv))
 	r.POST("/movements", _WorldService_Move0_HTTP_Handler(srv))
+	r.POST("/directional-movements", _WorldService_MoveDirection0_HTTP_Handler(srv))
 	r.POST("/movement-stops", _WorldService_Stop0_HTTP_Handler(srv))
 	r.POST("/cultivation-transfers", _WorldService_TransferCultivation0_HTTP_Handler(srv))
 	r.POST("/cultivation-seizures", _WorldService_SeizeCultivation0_HTTP_Handler(srv))
@@ -68,6 +74,25 @@ func RegisterWorldServiceHTTPServer(s *http.Server, srv WorldServiceHTTPServer) 
 	r.POST("/conversation-responses", _WorldService_RespondConversation0_HTTP_Handler(srv))
 	r.POST("/conversation-messages", _WorldService_SendConversationMessage0_HTTP_Handler(srv))
 	r.POST("/conversation-closures", _WorldService_CloseConversation0_HTTP_Handler(srv))
+}
+
+func _WorldService_GetGameRules0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetGameRulesRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationWorldServiceGetGameRules)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetGameRules(ctx, req.(*GetGameRulesRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*GameRules)
+		return ctx.Result(200, reply)
+	}
 }
 
 func _WorldService_GetState0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
@@ -142,6 +167,28 @@ func _WorldService_Move0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.
 		http.SetOperation(ctx, OperationWorldServiceMove)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
 			return srv.Move(ctx, req.(*MoveRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*RoleState)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _WorldService_MoveDirection0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in MoveDirectionRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationWorldServiceMoveDirection)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.MoveDirection(ctx, req.(*MoveDirectionRequest))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {
@@ -368,11 +415,13 @@ func _WorldService_CloseConversation0_HTTP_Handler(srv WorldServiceHTTPServer) f
 
 type WorldServiceHTTPClient interface {
 	CloseConversation(ctx context.Context, req *CloseConversationRequest, opts ...http.CallOption) (rsp *Conversation, err error)
+	GetGameRules(ctx context.Context, req *GetGameRulesRequest, opts ...http.CallOption) (rsp *GameRules, err error)
 	GetState(ctx context.Context, req *GetStateRequest, opts ...http.CallOption) (rsp *RoleState, err error)
 	GetWorldBounds(ctx context.Context, req *GetWorldBoundsRequest, opts ...http.CallOption) (rsp *WorldBounds, err error)
 	ListConversations(ctx context.Context, req *ListConversationsRequest, opts ...http.CallOption) (rsp *ListConversationsResponse, err error)
 	ListRecentEvents(ctx context.Context, req *ListRecentEventsRequest, opts ...http.CallOption) (rsp *ListRecentEventsResponse, err error)
 	Move(ctx context.Context, req *MoveRequest, opts ...http.CallOption) (rsp *RoleState, err error)
+	MoveDirection(ctx context.Context, req *MoveDirectionRequest, opts ...http.CallOption) (rsp *RoleState, err error)
 	Reincarnate(ctx context.Context, req *ReincarnateRequest, opts ...http.CallOption) (rsp *RoleState, err error)
 	RequestConversation(ctx context.Context, req *RequestConversationRequest, opts ...http.CallOption) (rsp *Conversation, err error)
 	RespondConversation(ctx context.Context, req *RespondConversationRequest, opts ...http.CallOption) (rsp *Conversation, err error)
@@ -398,6 +447,19 @@ func (c *WorldServiceHTTPClientImpl) CloseConversation(ctx context.Context, in *
 	opts = append(opts, http.Operation(OperationWorldServiceCloseConversation))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *WorldServiceHTTPClientImpl) GetGameRules(ctx context.Context, in *GetGameRulesRequest, opts ...http.CallOption) (*GameRules, error) {
+	var out GameRules
+	pattern := "/game-rules"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationWorldServiceGetGameRules))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -461,6 +523,19 @@ func (c *WorldServiceHTTPClientImpl) Move(ctx context.Context, in *MoveRequest, 
 	pattern := "/movements"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceMove))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *WorldServiceHTTPClientImpl) MoveDirection(ctx context.Context, in *MoveDirectionRequest, opts ...http.CallOption) (*RoleState, error) {
+	var out RoleState
+	pattern := "/directional-movements"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationWorldServiceMoveDirection))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
