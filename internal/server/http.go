@@ -14,15 +14,14 @@ import (
 	"xiuxian/internal/service"
 )
 
-func NewLegacyHTTPHandler(usecase *biz.WorldUsecase, config *conf.Server) http.Handler {
-	return service.NewHTTPHandler(usecase, service.HTTPOptions{
-		SecureCookies: config.SecureCookie,
-		WorkerToken:   config.WorkerToken,
-		Version:       config.Version,
-	})
+func NewAuxiliaryHTTPHandler(usecase *biz.WorldUsecase, limiter biz.RateLimiter, health biz.DependencyHealthChecker, config *conf.Server) http.Handler {
+	return service.NewAuxiliaryHTTPHandler(usecase, limiter, service.AuxiliaryHTTPOptions{
+		WorkerToken: config.WorkerToken,
+		Version:     config.Version,
+	}, health)
 }
 
-func NewHTTPServer(config *conf.Server, worldService *service.WorldService, legacy http.Handler, logger log.Logger) *kratoshttp.Server {
+func NewHTTPServer(config *conf.Server, worldService *service.WorldService, authService *service.AuthService, auxiliary http.Handler, logger log.Logger) *kratoshttp.Server {
 	server := kratoshttp.NewServer(
 		kratoshttp.Address(config.HTTPAddress),
 		kratoshttp.Timeout(config.HTTPTimeout),
@@ -32,6 +31,7 @@ func NewHTTPServer(config *conf.Server, worldService *service.WorldService, lega
 		),
 	)
 	worldv1.RegisterWorldServiceHTTPServer(server, worldService)
-	server.HandlePrefix("/", legacy)
+	worldv1.RegisterAuthServiceHTTPServer(server, authService)
+	server.HandlePrefix("/", auxiliary)
 	return server
 }

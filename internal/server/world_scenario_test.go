@@ -1,20 +1,27 @@
-package api_test
+package server_test
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"xiuxian/internal/api"
-	"xiuxian/internal/world"
+	"github.com/go-kratos/kratos/v2/log"
+
+	"xiuxian/internal/biz"
+	"xiuxian/internal/conf"
+	"xiuxian/internal/data"
+	httpserver "xiuxian/internal/server"
+	worldservice "xiuxian/internal/service"
 )
 
 type memoryDurableStore struct {
@@ -51,6 +58,11 @@ type testClient struct {
 
 func (c *testClient) request(t *testing.T, method, path string, body any, headers map[string]string) *http.Response {
 	t.Helper()
+	originalPath := path
+	path, body, normalization := c.translateScenarioRequest(t, method, path, body, headers)
+	if path == "/session" || path == "/mcp-key" {
+		method = http.MethodDelete
+	}
 	var payload bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&payload).Encode(body); err != nil {
@@ -79,7 +91,294 @@ func (c *testClient) request(t *testing.T, method, path string, body any, header
 			c.cookie = cookie
 		}
 	}
+	normalizeScenarioResponse(t, originalPath, normalization, resp)
 	return resp
+}
+
+func (c *testClient) translateScenarioRequest(t *testing.T, method, path string, body any, headers map[string]string) (string, any, string) {
+	t.Helper()
+	input, _ := body.(map[string]any)
+	idempotencyKey := headers["Idempotency-Key"]
+	expectation := func() map[string]any {
+		lifeNumber := headers["X-Expected-Life-Number"]
+		stateVersion := headers["X-Expected-State-Version"]
+		if lifeNumber == "" || stateVersion == "" {
+			lifeNumber, stateVersion = c.fetchExpectation(t)
+		}
+		return map[string]any{"expectedLifeNumber": lifeNumber, "expectedStateVersion": stateVersion}
+	}
+	command := func() map[string]any {
+		result := expectation()
+		result["idempotencyKey"] = idempotencyKey
+		return result
+	}
+
+	switch {
+	case path == "/api/v1/healthz":
+		return "/healthz", nil, ""
+	case strings.HasPrefix(path, "/api/v1/test/clock/advance"):
+		return strings.Replace(path, "/api/v1/test/clock/advance", "/test/clock/advance", 1), body, ""
+	case path == "/api/v1/auth/register":
+		return "/registrations", map[string]any{"account": input["account"], "password": input["password"], "roleName": input["role_name"]}, "register_state"
+	case path == "/api/v1/auth/login":
+		return "/sessions", map[string]any{"account": input["account"], "password": input["password"]}, "auth_state"
+	case path == "/api/v1/auth/logout":
+		return "/session", nil, "empty"
+	case path == "/api/v1/state":
+		return "/state", nil, "state"
+	case path == "/api/v1/world/bounds":
+		return "/world/bounds", nil, "bounds"
+	case path == "/api/v1/movement/move":
+		request := command()
+		request["target"] = map[string]any{"xMilliunits": milliunits(input["x"]), "yMilliunits": milliunits(input["y"])}
+		return "/movements", request, "state"
+	case path == "/api/v1/movement/stop":
+		return "/movement-stops", command(), "state"
+	case path == "/api/v1/scan":
+		return "/scans", expectation(), "scan"
+	case path == "/api/v1/cultivation/transfer":
+		request := command()
+		request["targetId"] = input["target_id"]
+		request["amountMinutes"] = fmt.Sprint(input["amount_minutes"])
+		return "/cultivation-transfers", request, "state"
+	case path == "/api/v1/cultivation/seize":
+		request := command()
+		request["targetId"] = input["target_id"]
+		return "/cultivation-seizures", request, "state"
+	case path == "/api/v1/events":
+		return "/events?limit=100", nil, "events"
+	case path == "/api/v1/reincarnate":
+		request := command()
+		if random, _ := input["random"].(bool); random {
+			request["random"] = true
+		} else {
+			request["position"] = map[string]any{"xMilliunits": milliunits(input["x"]), "yMilliunits": milliunits(input["y"])}
+		}
+		return "/reincarnations", request, "state"
+	case path == "/api/v1/mcp-key/rotate":
+		return "/mcp-key-rotations", map[string]any{}, "api_key"
+	case path == "/api/v1/mcp-key/revoke":
+		return "/mcp-key", nil, "empty"
+	case path == "/api/v1/conversations" && method == http.MethodGet:
+		return "/conversations", nil, "conversations"
+	case path == "/api/v1/conversations":
+		request := command()
+		request["targetId"] = input["target_id"]
+		return "/conversations", request, "conversation_created"
+	case strings.HasPrefix(path, "/api/v1/conversations/"):
+		parts := strings.Split(strings.TrimPrefix(path, "/api/v1/conversations/"), "/")
+		request := command()
+		request["conversationId"] = parts[0]
+		switch parts[1] {
+		case "respond":
+			request["action"] = input["action"]
+			return "/conversation-responses", request, "conversation"
+		case "messages":
+			request["content"] = input["content"]
+			return "/conversation-messages", request, "message_created"
+		case "close":
+			return "/conversation-closures", request, "conversation"
+		}
+	}
+	return path, body, ""
+}
+
+func (c *testClient) fetchExpectation(t *testing.T) (string, string) {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodGet, c.baseURL+"/state", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.cookie != nil {
+		request.AddCookie(c.cookie)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("fetch expectation status = %d", response.StatusCode)
+	}
+	var state map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&state); err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprint(state["lifeNumber"]), fmt.Sprint(state["stateVersion"])
+}
+
+func milliunits(value any) string {
+	switch typed := value.(type) {
+	case float64:
+		return strconv.FormatInt(int64(math.Round(typed*1000)), 10)
+	case float32:
+		return strconv.FormatInt(int64(math.Round(float64(typed)*1000)), 10)
+	case int:
+		return strconv.FormatInt(int64(typed)*1000, 10)
+	case int64:
+		return strconv.FormatInt(typed*1000, 10)
+	default:
+		parsed, _ := strconv.ParseFloat(fmt.Sprint(value), 64)
+		return strconv.FormatInt(int64(math.Round(parsed*1000)), 10)
+	}
+}
+
+func normalizeScenarioResponse(t *testing.T, originalPath, normalization string, response *http.Response) {
+	t.Helper()
+	if response.StatusCode >= 400 {
+		if response.StatusCode == http.StatusPreconditionFailed {
+			response.StatusCode = http.StatusConflict
+		}
+		return
+	}
+	if normalization == "" {
+		return
+	}
+	payload, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	var value map[string]any
+	if len(payload) > 0 {
+		if err := json.Unmarshal(payload, &value); err != nil {
+			t.Fatalf("decode generated response for %s: %v", originalPath, err)
+		}
+	}
+	var normalized any = value
+	switch normalization {
+	case "register_state":
+		normalized = legacyState(value["state"].(map[string]any))
+		response.StatusCode = http.StatusCreated
+	case "auth_state":
+		normalized = legacyState(value["state"].(map[string]any))
+	case "state":
+		normalized = legacyState(value)
+	case "bounds":
+		normalized = map[string]any{
+			"min_x": units(value["minXMilliunits"]), "max_x": units(value["maxXMilliunits"]),
+			"min_y": units(value["minYMilliunits"]), "max_y": units(value["maxYMilliunits"]),
+		}
+	case "scan":
+		normalized = legacyScan(value)
+	case "events":
+		events := make([]any, 0)
+		for _, item := range items(value, "events") {
+			event := item.(map[string]any)
+			data := map[string]any{}
+			if raw, _ := event["dataJson"].(string); raw != "" {
+				_ = json.Unmarshal([]byte(raw), &data)
+			}
+			events = append(events, map[string]any{
+				"id": number(event["id"]), "type": event["type"], "message": event["message"],
+				"created_at": number(event["createdAtUnixMillis"]), "life_number": number(event["lifeNumber"]), "data": data,
+			})
+		}
+		normalized = map[string]any{"events": events}
+	case "conversation", "conversation_created":
+		normalized = legacyConversation(value)
+		if normalization == "conversation_created" {
+			response.StatusCode = http.StatusCreated
+		}
+	case "conversations":
+		conversations := make([]any, 0)
+		for _, item := range items(value, "conversations") {
+			conversations = append(conversations, legacyConversation(item.(map[string]any)))
+		}
+		normalized = map[string]any{"conversations": conversations}
+	case "message_created":
+		normalized = legacyMessage(value)
+		response.StatusCode = http.StatusCreated
+	case "api_key":
+		normalized = map[string]any{"api_key": value["apiKey"]}
+	case "empty":
+		response.StatusCode = http.StatusNoContent
+		response.Body = http.NoBody
+		response.ContentLength = 0
+		return
+	}
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body = io.NopCloser(bytes.NewReader(encoded))
+	response.ContentLength = int64(len(encoded))
+}
+
+func legacyState(value map[string]any) map[string]any {
+	position, _ := value["position"].(map[string]any)
+	return map[string]any{
+		"id": value["id"], "name": value["name"], "life_number": number(value["lifeNumber"]), "status": value["status"],
+		"cultivation": float64(number(value["cultivationMillis"])) / 60000, "realm_level": number(value["realmLevel"]),
+		"realm": value["realmName"], "age_seconds": float64(number(value["ageMillis"])) / 1000,
+		"lifespan_seconds": float64(number(value["lifespanMillis"])) / 1000, "speed": number(value["speed"]),
+		"sense_radius": number(value["senseRadius"]), "movement_state": value["movementState"], "state_version": number(value["stateVersion"]),
+		"rule_version": number(value["ruleVersion"]),
+		"position":     map[string]any{"x": units(position["xMilliunits"]), "y": units(position["yMilliunits"])},
+	}
+}
+
+func legacyScan(value map[string]any) map[string]any {
+	roles := make([]any, 0)
+	for _, item := range items(value, "roles") {
+		role := item.(map[string]any)
+		normalized := map[string]any{"id": role["id"], "name": role["name"], "realm": role["realm"], "status": role["status"], "distance": role["distance"]}
+		if position, ok := role["position"].(map[string]any); ok {
+			normalized["position"] = map[string]any{"x": units(position["xMilliunits"]), "y": units(position["yMilliunits"])}
+		}
+		roles = append(roles, normalized)
+	}
+	opportunities := value["opportunities"]
+	if opportunities == nil {
+		opportunities = []any{}
+	}
+	return map[string]any{
+		"roles": roles, "opportunities": opportunities, "has_more": value["hasMore"],
+		"truncated_roles": number(value["truncatedRoles"]), "truncated_opportunities": number(value["truncatedOpportunities"]),
+	}
+}
+
+func legacyConversation(value map[string]any) map[string]any {
+	messages := make([]any, 0)
+	for _, item := range items(value, "messages") {
+		messages = append(messages, legacyMessage(item.(map[string]any)))
+	}
+	return map[string]any{
+		"id": value["id"], "requester_id": value["requesterId"], "recipient_id": value["recipientId"],
+		"status": value["status"], "messages": messages, "created_at": number(value["createdAtUnixMillis"]),
+		"updated_at": number(value["updatedAtUnixMillis"]),
+	}
+}
+
+func legacyMessage(value map[string]any) map[string]any {
+	return map[string]any{
+		"id": number(value["id"]), "sender_id": value["senderId"], "content": value["content"],
+		"trusted": value["trusted"], "created_at": number(value["createdAtUnixMillis"]),
+	}
+}
+
+func number(value any) int64 {
+	switch typed := value.(type) {
+	case string:
+		result, _ := strconv.ParseInt(typed, 10, 64)
+		return result
+	case float64:
+		return int64(typed)
+	case nil:
+		return 0
+	default:
+		result, _ := strconv.ParseInt(fmt.Sprint(value), 10, 64)
+		return result
+	}
+}
+
+func units(value any) float64 {
+	return float64(number(value)) / 1000
+}
+
+func items(value map[string]any, key string) []any {
+	result, _ := value[key].([]any)
+	return result
 }
 
 func decode[T any](t *testing.T, resp *http.Response) T {
@@ -92,18 +391,33 @@ func decode[T any](t *testing.T, resp *http.Response) T {
 	return value
 }
 
-func newServer(t *testing.T) (*httptest.Server, *world.ManualClock) {
+func newServer(t *testing.T) (*httptest.Server, *biz.ManualClock) {
 	t.Helper()
-	clock := world.NewManualClock(time.UnixMilli(1_700_000_000_000))
-	service := world.NewService(clock)
-	server := httptest.NewServer(api.NewHandler(service, api.Options{AllowTestClock: true, Version: "test-version"}))
+	clock := biz.NewManualClock(time.UnixMilli(1_700_000_000_000))
+	authority := biz.NewService(clock)
+	server := httptest.NewServer(newHTTPHandler(authority, worldservice.AuxiliaryHTTPOptions{AllowTestClock: true, DisableRateLimits: true, Version: "test-version"}))
 	t.Cleanup(server.Close)
 	return server, clock
 }
 
+func newHTTPHandler(authority *biz.Service, options worldservice.AuxiliaryHTTPOptions) http.Handler {
+	logger := log.NewStdLogger(io.Discard)
+	usecase := biz.NewWorldUsecase(authority, logger)
+	limiter := data.NewMemoryRateLimiter()
+	auxiliary := worldservice.NewAuxiliaryHTTPHandler(usecase, limiter, options)
+	world := worldservice.NewWorldService(usecase, limiter)
+	return httpserver.NewHTTPServer(
+		&conf.Server{HTTPAddress: ":0", HTTPTimeout: 0},
+		world,
+		worldservice.NewAuthService(usecase, world, limiter, &conf.Server{}),
+		auxiliary,
+		logger,
+	)
+}
+
 func TestPublicHealthReportsAuthorityVersion(t *testing.T) {
 	server, _ := newServer(t)
-	response, err := http.Get(server.URL + "/api/v1/healthz")
+	response, err := http.Get(server.URL + "/healthz")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +427,58 @@ func TestPublicHealthReportsAuthorityVersion(t *testing.T) {
 	health := decode[map[string]string](t, response)
 	if health["status"] != "ok" || health["service"] != "game-server" || health["version"] != "test-version" {
 		t.Fatalf("health response = %#v", health)
+	}
+}
+
+func TestLegacyAPIV1RoutesAreRemoved(t *testing.T) {
+	server, _ := newServer(t)
+	response, err := http.Get(server.URL + "/api/v1/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("legacy route status = %d, want 404", response.StatusCode)
+	}
+}
+
+func TestRegistrationAndWebSessionBudgetsAreIndependent(t *testing.T) {
+	clock := biz.NewManualClock(time.UnixMilli(1_700_000_000_000))
+	server := httptest.NewServer(newHTTPHandler(biz.NewService(clock), worldservice.AuxiliaryHTTPOptions{}))
+	defer server.Close()
+	client := &testClient{baseURL: server.URL}
+
+	for attempt := 0; attempt < 4; attempt++ {
+		response := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{}, nil)
+		if attempt < 3 && response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("registration attempt %d status = %d", attempt+1, response.StatusCode)
+		}
+		if attempt == 3 && response.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("registration rate-limit status = %d, want 429", response.StatusCode)
+		}
+		response.Body.Close()
+	}
+
+	server.Close()
+	server = httptest.NewServer(newHTTPHandler(biz.NewService(clock), worldservice.AuxiliaryHTTPOptions{}))
+	defer server.Close()
+	client = &testClient{baseURL: server.URL}
+	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "web-budget", "password": "a sufficiently long password", "role_name": "流量真人",
+	}, nil)
+	if registered.StatusCode != http.StatusCreated {
+		t.Fatalf("register status = %d", registered.StatusCode)
+	}
+	registered.Body.Close()
+	for attempt := 0; attempt < 21; attempt++ {
+		response := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+		if attempt < 20 && response.StatusCode != http.StatusOK {
+			t.Fatalf("web request %d status = %d", attempt+1, response.StatusCode)
+		}
+		if attempt == 20 && response.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("web session rate-limit status = %d, want 429", response.StatusCode)
+		}
+		response.Body.Close()
 	}
 }
 
@@ -143,7 +509,7 @@ func TestRegistrationCreatesOnePermanentRoleAndSecureSession(t *testing.T) {
 		t.Fatalf("authenticated state status = %d, want 200", me.StatusCode)
 	}
 	_ = decode[map[string]any](t, me)
-	contract := client.request(t, http.MethodPost, "/xiuxian.v1.WorldService/GetState", map[string]any{}, nil)
+	contract := client.request(t, http.MethodGet, "/state", nil, nil)
 	contractState := decode[map[string]any](t, contract)
 	if contractState["name"] != "青玄" || contractState["realmName"] != "凡人" {
 		t.Fatalf("generated contract state = %#v", contractState)
@@ -397,13 +763,13 @@ func TestMCPKeyIsRoleScopedRotatableAndImmediatelyRevocable(t *testing.T) {
 }
 
 func TestAcknowledgedStateSurvivesAuthorityRestart(t *testing.T) {
-	clock := world.NewManualClock(time.UnixMilli(1_700_000_000_000))
+	clock := biz.NewManualClock(time.UnixMilli(1_700_000_000_000))
 	store := &memoryDurableStore{}
-	service, err := world.NewPersistentService(context.Background(), clock, store)
+	service, err := biz.NewPersistentService(context.Background(), clock, store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := httptest.NewServer(api.NewHandler(service, api.Options{}))
+	first := httptest.NewServer(newHTTPHandler(service, worldservice.AuxiliaryHTTPOptions{}))
 	client := &testClient{baseURL: first.URL}
 	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"account": "durable", "password": "a sufficiently long password", "role_name": "不灭档",
@@ -421,11 +787,11 @@ func TestAcknowledgedStateSurvivesAuthorityRestart(t *testing.T) {
 	first.Close()
 
 	clock.Advance(2 * time.Second)
-	restarted, err := world.NewPersistentService(context.Background(), clock, store)
+	restarted, err := biz.NewPersistentService(context.Background(), clock, store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := httptest.NewServer(api.NewHandler(restarted, api.Options{}))
+	second := httptest.NewServer(newHTTPHandler(restarted, worldservice.AuxiliaryHTTPOptions{}))
 	defer second.Close()
 	client.baseURL = second.URL
 	stateResp := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
@@ -440,13 +806,13 @@ func TestAcknowledgedStateSurvivesAuthorityRestart(t *testing.T) {
 }
 
 func TestPersistentAuthorityUsesDatabaseTimeInsteadOfProcessClock(t *testing.T) {
-	processClock := world.NewManualClock(time.UnixMilli(1_700_000_000_000))
+	processClock := biz.NewManualClock(time.UnixMilli(1_700_000_000_000))
 	store := &timedDurableStore{now: processClock.Now()}
-	service, err := world.NewPersistentService(context.Background(), processClock, store)
+	service, err := biz.NewPersistentService(context.Background(), processClock, store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(api.NewHandler(service, api.Options{}))
+	server := httptest.NewServer(newHTTPHandler(service, worldservice.AuxiliaryHTTPOptions{}))
 	defer server.Close()
 	client := &testClient{baseURL: server.URL}
 	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{

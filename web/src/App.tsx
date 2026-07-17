@@ -49,7 +49,7 @@ function App() {
   useEffect(() => {
     if (!state) return
     const after = events.at(-1)?.id ?? 0
-    const source = new EventSource(`/api/v1/events/stream?after=${after}`, { withCredentials: true })
+    const source = new EventSource(`/events/stream?after=${after}`, { withCredentials: true })
     source.onmessage = () => void refresh()
     for (const type of [
       'scanned', 'movement_arrived', 'conversation_requested', 'conversation_incoming', 'conversation_responded',
@@ -61,8 +61,17 @@ function App() {
     return () => source.close()
   }, [state?.id, events.at(-1)?.id, refresh])
 
+  const clearRoleView = () => {
+    setEvents([])
+    setConversations([])
+    setScan(null)
+    setBounds({ min_x: 0, max_x: 0, min_y: 0, max_y: 0 })
+    setNotice('')
+    setError('')
+  }
+
   if (!state) {
-    return <AuthScreen onAuthenticated={setState} error={error} health={health} run={run} />
+    return <AuthScreen onAuthenticated={(next) => { clearRoleView(); setState(next); void refresh() }} error={error} health={health} run={run} />
   }
 
   const updateState = (next?: RoleState) => {
@@ -79,7 +88,7 @@ function App() {
           <p>{state.status === 'alive' ? `${state.realm}，正在世间` : '本世已终，等待转世'}</p>
           <p className="service-status">世界权威：{health ? `${health.service} ${health.version} · 正常` : '连接中断'}</p>
         </div>
-        <button className="quiet" onClick={() => void run(api.logout).then(() => setState(null))}>退出登录</button>
+        <button className="quiet" onClick={() => void run(api.logout).then(() => { clearRoleView(); setState(null) })}>退出登录</button>
       </header>
 
       {(notice || error) && <p className={error ? 'notice error' : 'notice'} role="status">{error || notice}</p>}
@@ -155,7 +164,7 @@ function MoveForm({ state, onChanged, run }: { state: RoleState; onChanged: (sta
   return <form className="inline-form" onSubmit={(event) => { event.preventDefault(); void run(() => api.move(x, y), '轨迹已更新').then(onChanged) }}><label>X<input type="number" step="0.001" value={x} onChange={(e) => setX(e.target.valueAsNumber)} /></label><label>Y<input type="number" step="0.001" value={y} onChange={(e) => setY(e.target.valueAsNumber)} /></label><button>移动</button><button type="button" className="quiet" onClick={() => void run(api.stop, '已停在权威位置').then(onChanged)}>停止</button></form>
 }
 
-function ScanView({ result }: { result: ScanResult }) { return <div className="scan-results" aria-live="polite"><h3>神识所见</h3>{result.roles.length === 0 && result.opportunities.length === 0 && <p className="muted">四野寂静。</p>}<ul>{result.roles.map((role) => <li key={role.id}><strong>{role.name}</strong> · {role.realm} · 距离 {role.distance.toFixed(3)} {role.position && `· (${role.position.x}, ${role.position.y})`}</li>)}{result.opportunities.map((item, index) => <li key={`opportunity-${index}`}><strong>{item.message}</strong> · 距离约 {item.distance.toFixed(3)}</li>)}</ul>{result.has_more && <p>结果已截断。</p>}</div> }
+function ScanView({ result }: { result: ScanResult }) { return <div className="scan-results" aria-live="polite"><h3>神识所见</h3>{result.roles.length === 0 && result.opportunities.length === 0 && <p className="muted">四野寂静。</p>}<ul>{result.roles.map((role) => <li key={role.id}><strong>{role.name}</strong> · {role.realm} · 距离 {role.distance.toFixed(3)} {role.position && `· (${role.position.x}, ${role.position.y})`}</li>)}{result.opportunities.map((item, index) => <li key={`opportunity-${index}`}><strong>{item.message}</strong> · 距离约 {item.distance.toFixed(3)}</li>)}</ul>{result.has_more && <p>结果已截断：另有 {result.truncated_roles} 个角色、{result.truncated_opportunities} 个机缘信号。</p>}</div> }
 
 function TargetAction({ label, withAmount, onSubmit }: { label: string; withAmount?: boolean; onSubmit: (target: string, amount?: number) => void }) { const [target, setTarget] = useState(''); const [amount, setAmount] = useState(1); return <form className="inline-form" onSubmit={(event) => { event.preventDefault(); onSubmit(target, withAmount ? amount : undefined) }}><label>目标 ID<input required value={target} onChange={(e) => setTarget(e.target.value)} /></label>{withAmount && <label>分钟<input required type="number" min="1" step="1" value={amount} onChange={(e) => setAmount(e.target.valueAsNumber)} /></label>}<button>{label}</button></form> }
 

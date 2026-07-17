@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	Version                  = int32(1)
 	cultivationUnitsPerPoint = int64(time.Minute / time.Millisecond)
 	coordinateScale          = int64(1000)
 	opportunityDuration      = 24 * time.Hour

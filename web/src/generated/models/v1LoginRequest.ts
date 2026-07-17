@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type v1ListRecentEventsRequest = {
-    after?: string;
-    limit?: number;
+export type v1LoginRequest = {
+    account?: string;
+    password?: string;
 };
 

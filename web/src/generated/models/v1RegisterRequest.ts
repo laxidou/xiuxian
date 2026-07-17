@@ -2,6 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type v1ListConversationsRequest = {
+export type v1RegisterRequest = {
+    account?: string;
+    password?: string;
+    roleName?: string;
 };
 

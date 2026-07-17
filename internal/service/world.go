@@ -21,10 +21,11 @@ import (
 type WorldService struct {
 	worldv1.UnimplementedWorldServiceServer
 	usecase *biz.WorldUsecase
+	limiter biz.RateLimiter
 }
 
-func NewWorldService(usecase *biz.WorldUsecase) *WorldService {
-	return &WorldService{usecase: usecase}
+func NewWorldService(usecase *biz.WorldUsecase, limiter biz.RateLimiter) *WorldService {
+	return &WorldService{usecase: usecase, limiter: limiter}
 }
 
 func (s *WorldService) GetState(ctx context.Context, _ *worldv1.GetStateRequest) (*worldv1.RoleState, error) {
@@ -59,7 +60,11 @@ func (s *WorldService) Scan(ctx context.Context, request *worldv1.ScanRequest) (
 	if err != nil {
 		return nil, mapError(err)
 	}
-	response := &worldv1.ScanResponse{HasMore: result.HasMore}
+	response := &worldv1.ScanResponse{
+		HasMore:                result.HasMore,
+		TruncatedRoles:         int32(result.TruncatedRoles),
+		TruncatedOpportunities: int32(result.TruncatedOpportunities),
+	}
 	for _, role := range result.Roles {
 		entry := &worldv1.ScanRole{Id: role.ID, Name: role.Name, Realm: role.Realm, Status: string(role.Status), Distance: role.Distance}
 		if role.Position != nil {
@@ -231,8 +236,12 @@ func (s *WorldService) authenticate(ctx context.Context) (string, error) {
 		authorization = values[0]
 	}
 	if strings.HasPrefix(authorization, "Bearer ") {
-		roleID, err := s.usecase.AuthenticateAPIKey(ctx, strings.TrimPrefix(authorization, "Bearer "))
+		key := strings.TrimPrefix(authorization, "Bearer ")
+		roleID, err := s.usecase.AuthenticateAPIKey(ctx, key)
 		if err == nil {
+			if err := s.enforceRateLimit(ctx, "api_key", key, biz.APIKeyRateLimit); err != nil {
+				return "", err
+			}
 			return roleID, nil
 		}
 	}
@@ -240,6 +249,9 @@ func (s *WorldService) authenticate(ctx context.Context) (string, error) {
 		if cookie, err := request.Cookie("xiuxian_session"); err == nil {
 			roleID, authErr := s.usecase.AuthenticateSession(ctx, cookie.Value)
 			if authErr == nil {
+				if err := s.enforceRateLimit(ctx, "web_session", cookie.Value, biz.WebSessionRateLimit); err != nil {
+					return "", err
+				}
 				return roleID, nil
 			}
 		}
@@ -247,8 +259,19 @@ func (s *WorldService) authenticate(ctx context.Context) (string, error) {
 	return "", kratoserrors.Unauthorized("AUTH_REQUIRED", "authentication required")
 }
 
+func (s *WorldService) enforceRateLimit(ctx context.Context, scope, subject string, policy biz.RateLimitPolicy) error {
+	allowed, err := s.limiter.Allow(ctx, scope, subject, policy)
+	if err != nil {
+		return kratoserrors.ServiceUnavailable("RATE_LIMIT_UNAVAILABLE", "rate limiter unavailable")
+	}
+	if !allowed {
+		return kratoserrors.New(http.StatusTooManyRequests, "RATE_LIMITED", "rate limit exceeded")
+	}
+	return nil
+}
+
 func RoleState(state biz.State) *worldv1.RoleState {
-	return &worldv1.RoleState{Id: state.ID, Name: state.Name, LifeNumber: state.LifeNumber, Status: string(state.Status), CultivationMillis: int64(math.Round(state.Cultivation * 60000)), RealmLevel: int32(state.RealmLevel), RealmName: state.Realm, AgeMillis: int64(math.Round(state.AgeSeconds * 1000)), LifespanMillis: int64(math.Round(state.LifespanSeconds * 1000)), Speed: state.Speed, SenseRadius: state.SenseRadius, Position: protoPosition(state.Position), MovementState: string(state.MovementState), StateVersion: state.StateVersion}
+	return &worldv1.RoleState{Id: state.ID, Name: state.Name, LifeNumber: state.LifeNumber, Status: string(state.Status), CultivationMillis: int64(math.Round(state.Cultivation * 60000)), RealmLevel: int32(state.RealmLevel), RealmName: state.Realm, AgeMillis: int64(math.Round(state.AgeSeconds * 1000)), LifespanMillis: int64(math.Round(state.LifespanSeconds * 1000)), Speed: state.Speed, SenseRadius: state.SenseRadius, Position: protoPosition(state.Position), MovementState: string(state.MovementState), StateVersion: state.StateVersion, RuleVersion: state.RuleVersion}
 }
 
 func WorldBounds(bounds biz.Bounds) *worldv1.WorldBounds {

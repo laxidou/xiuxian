@@ -26,16 +26,19 @@ func wireApp(config *conf.Config, logger log.Logger) (*kratos.App, func(), error
 		return nil, nil, err
 	}
 	worldRepository := data.NewWorldRepository(dataData)
-	worldService, err := biz.NewWorldAuthority(worldRepository)
+	bizService, err := biz.NewWorldAuthority(worldRepository)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	worldUsecase := biz.NewWorldUsecase(worldService, logger)
-	serviceWorldService := service.NewWorldService(worldUsecase)
-	handler := server.NewLegacyHTTPHandler(worldUsecase, confServer)
-	httpServer := server.NewHTTPServer(confServer, serviceWorldService, handler, logger)
-	grpcServer := server.NewGRPCServer(confServer, serviceWorldService, logger)
+	worldUsecase := biz.NewWorldUsecase(bizService, logger)
+	rateLimiter := data.NewRateLimiter(dataData)
+	worldService := service.NewWorldService(worldUsecase, rateLimiter)
+	authService := service.NewAuthService(worldUsecase, worldService, rateLimiter, confServer)
+	dependencyHealthChecker := data.NewDependencyHealthChecker(dataData)
+	handler := server.NewAuxiliaryHTTPHandler(worldUsecase, rateLimiter, dependencyHealthChecker, confServer)
+	httpServer := server.NewHTTPServer(confServer, worldService, authService, handler, logger)
+	grpcServer := server.NewGRPCServer(confServer, worldService, logger)
 	app := newApp(config, logger, httpServer, grpcServer)
 	return app, func() {
 		cleanup()

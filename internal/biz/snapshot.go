@@ -1,4 +1,4 @@
-package world
+package biz
 
 import (
 	"context"
@@ -39,7 +39,7 @@ type serviceSnapshot struct {
 	NextID              uint64                      `json:"next_id"`
 }
 
-func (s *Service) persistLocked() error {
+func (s *Service) persistLocked(ctx context.Context) error {
 	if s.store == nil {
 		return nil
 	}
@@ -60,8 +60,8 @@ func (s *Service) persistLocked() error {
 	if err != nil {
 		return fmt.Errorf("encode world snapshot: %w", err)
 	}
-	if err := s.store.Save(context.Background(), payload); err != nil {
-		if committed, loadErr := s.store.Load(context.Background()); loadErr == nil && len(committed) > 0 {
+	if err := s.store.Save(ctx, payload); err != nil {
+		if committed, loadErr := s.store.Load(ctx); loadErr == nil && len(committed) > 0 {
 			_ = s.restoreLocked(committed)
 		} else if loadErr == nil {
 			s.resetStateLocked()
@@ -82,7 +82,7 @@ func (s *Service) resetStateLocked() {
 	s.conversations = make(map[string]*Conversation)
 	s.conversationResults = make(map[string]string)
 	s.eventSequence = 0
-	s.minX, s.maxX, s.minY, s.maxY = 0, 0, 0, 0
+	s.minX, s.maxX, s.minY, s.maxY = 0, initialWorldMaxX, 0, 0
 	s.nextID = 0
 }
 
@@ -107,6 +107,11 @@ func (s *Service) restoreLocked(payload []byte) error {
 	}
 	s.roleNames = snapshot.RoleNames
 	s.roles = snapshot.Roles
+	for _, role := range s.roles {
+		if role.RuleVersion == 0 {
+			role.RuleVersion = rules.Version
+		}
+	}
 	s.idempotency = snapshot.Idempotency
 	s.events = snapshot.Events
 	s.opportunities = snapshot.Opportunities
@@ -114,6 +119,9 @@ func (s *Service) restoreLocked(payload []byte) error {
 	s.conversationResults = snapshot.ConversationResults
 	s.eventSequence = snapshot.EventSequence
 	s.minX, s.maxX, s.minY, s.maxY = snapshot.MinX, snapshot.MaxX, snapshot.MinY, snapshot.MaxY
+	if s.minX == 0 && s.maxX == 0 && s.minY == 0 && s.maxY == 0 {
+		s.maxX = initialWorldMaxX
+	}
 	s.nextID = snapshot.NextID
 	if s.roleNames == nil {
 		s.roleNames = make(map[string]string)

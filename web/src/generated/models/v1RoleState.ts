@@ -18,5 +18,6 @@ export type v1RoleState = {
     position?: v1Position;
     movementState?: string;
     stateVersion?: string;
+    ruleVersion?: number;
 };
 

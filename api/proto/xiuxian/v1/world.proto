@@ -3,53 +3,89 @@ syntax = "proto3";
 package xiuxian.v1;
 
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 
 option go_package = "xiuxian/gen/go/xiuxian/v1;xiuxianv1";
 
 service WorldService {
   rpc GetState(GetStateRequest) returns (RoleState) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/GetState" body: "*" };
+    option (google.api.http) = { get: "/state" };
   }
   rpc GetWorldBounds(GetWorldBoundsRequest) returns (WorldBounds) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/GetWorldBounds" body: "*" };
+    option (google.api.http) = { get: "/world/bounds" };
   }
   rpc Scan(ScanRequest) returns (ScanResponse) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/Scan" body: "*" };
+    option (google.api.http) = { post: "/scans" body: "*" };
   }
   rpc Move(MoveRequest) returns (RoleState) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/Move" body: "*" };
+    option (google.api.http) = { post: "/movements" body: "*" };
   }
   rpc Stop(StopRequest) returns (RoleState) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/Stop" body: "*" };
+    option (google.api.http) = { post: "/movement-stops" body: "*" };
   }
   rpc TransferCultivation(TransferCultivationRequest) returns (RoleState) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/TransferCultivation" body: "*" };
+    option (google.api.http) = { post: "/cultivation-transfers" body: "*" };
   }
   rpc SeizeCultivation(SeizeCultivationRequest) returns (RoleState) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/SeizeCultivation" body: "*" };
+    option (google.api.http) = { post: "/cultivation-seizures" body: "*" };
   }
   rpc Reincarnate(ReincarnateRequest) returns (RoleState) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/Reincarnate" body: "*" };
+    option (google.api.http) = { post: "/reincarnations" body: "*" };
   }
   rpc ListRecentEvents(ListRecentEventsRequest) returns (ListRecentEventsResponse) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/ListRecentEvents" body: "*" };
+    option (google.api.http) = { get: "/events" };
   }
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/ListConversations" body: "*" };
+    option (google.api.http) = { get: "/conversations" };
   }
   rpc RequestConversation(RequestConversationRequest) returns (Conversation) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/RequestConversation" body: "*" };
+    option (google.api.http) = { post: "/conversations" body: "*" };
   }
   rpc RespondConversation(RespondConversationRequest) returns (Conversation) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/RespondConversation" body: "*" };
+    option (google.api.http) = { post: "/conversation-responses" body: "*" };
   }
   rpc SendConversationMessage(SendConversationMessageRequest) returns (ConversationMessage) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/SendConversationMessage" body: "*" };
+    option (google.api.http) = { post: "/conversation-messages" body: "*" };
   }
   rpc CloseConversation(CloseConversationRequest) returns (Conversation) {
-    option (google.api.http) = { post: "/xiuxian.v1.WorldService/CloseConversation" body: "*" };
+    option (google.api.http) = { post: "/conversation-closures" body: "*" };
   }
 }
+
+service AuthService {
+  rpc Register(RegisterRequest) returns (AuthResponse) {
+    option (google.api.http) = { post: "/registrations" body: "*" };
+  }
+  rpc Login(LoginRequest) returns (AuthResponse) {
+    option (google.api.http) = { post: "/sessions" body: "*" };
+  }
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/session" };
+  }
+  rpc RotateMCPKey(RotateMCPKeyRequest) returns (RotateMCPKeyResponse) {
+    option (google.api.http) = { post: "/mcp-key-rotations" body: "*" };
+  }
+  rpc RevokeMCPKey(RevokeMCPKeyRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/mcp-key" };
+  }
+}
+
+message RegisterRequest {
+  string account = 1;
+  string password = 2;
+  string role_name = 3;
+}
+
+message LoginRequest {
+  string account = 1;
+  string password = 2;
+}
+
+message LogoutRequest {}
+message RotateMCPKeyRequest {}
+message RevokeMCPKeyRequest {}
+message AuthResponse { RoleState state = 1; }
+message RotateMCPKeyResponse { string api_key = 1; }
 
 message GetStateRequest {}
 message GetWorldBoundsRequest {}
@@ -78,6 +114,7 @@ message RoleState {
   Position position = 12;
   string movement_state = 13;
   int64 state_version = 14;
+  int32 rule_version = 15;
 }
 
 message WorldBounds {
@@ -105,6 +142,8 @@ message ScanResponse {
   repeated ScanRole roles = 1;
   repeated OpportunitySignal opportunities = 2;
   bool has_more = 3;
+  int32 truncated_roles = 4;
+  int32 truncated_opportunities = 5;
 }
 
 message MoveRequest {

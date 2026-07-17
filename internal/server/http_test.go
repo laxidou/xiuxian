@@ -13,22 +13,24 @@ import (
 
 	"xiuxian/internal/biz"
 	"xiuxian/internal/conf"
+	"xiuxian/internal/data"
 	"xiuxian/internal/server"
 	"xiuxian/internal/service"
-	"xiuxian/internal/world"
 )
 
-func TestKratosHTTPServerPreservesLegacyAndGeneratedRoutes(t *testing.T) {
+func TestKratosHTTPServerServesGeneratedRoutes(t *testing.T) {
 	logger := log.NewStdLogger(io.Discard)
-	usecase := biz.NewWorldUsecase(world.NewService(world.SystemClock{}), logger)
+	usecase := biz.NewWorldUsecase(biz.NewService(biz.SystemClock{}), logger)
 	config := &conf.Server{
 		HTTPAddress:  ":0",
 		HTTPTimeout:  0,
 		SecureCookie: false,
 		Version:      "test",
 	}
-	legacy := server.NewLegacyHTTPHandler(usecase, config)
-	transport := server.NewHTTPServer(config, service.NewWorldService(usecase), legacy, logger)
+	limiter := data.NewMemoryRateLimiter()
+	auxiliary := server.NewAuxiliaryHTTPHandler(usecase, limiter, data.NewDependencyHealthChecker(&data.Data{}), config)
+	worldService := service.NewWorldService(usecase, limiter)
+	transport := server.NewHTTPServer(config, worldService, service.NewAuthService(usecase, worldService, limiter, config), auxiliary, logger)
 	httpServer := httptest.NewServer(transport)
 	defer httpServer.Close()
 
@@ -38,20 +40,22 @@ func TestKratosHTTPServerPreservesLegacyAndGeneratedRoutes(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 	registerBody, _ := json.Marshal(map[string]string{
-		"account": "kratos-http",
+		"account":  "kratos-http",
 		"password": "a sufficiently long password",
-		"role_name": "玄门行者",
+		"roleName": "玄门行者",
 	})
-	response, err := client.Post(httpServer.URL+"/api/v1/auth/register", "application/json", bytes.NewReader(registerBody))
+	response, err := client.Post(httpServer.URL+"/registrations", "application/json", bytes.NewReader(registerBody))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.StatusCode != http.StatusCreated {
+	if response.StatusCode != http.StatusOK {
 		response.Body.Close()
 		t.Fatalf("register status = %d", response.StatusCode)
 	}
 	var registered struct {
-		ID string `json:"id"`
+		State struct {
+			ID string `json:"id"`
+		} `json:"state"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&registered); err != nil {
 		response.Body.Close()
@@ -59,7 +63,7 @@ func TestKratosHTTPServerPreservesLegacyAndGeneratedRoutes(t *testing.T) {
 	}
 	response.Body.Close()
 
-	response, err = client.Post(httpServer.URL+"/xiuxian.v1.WorldService/GetState", "application/json", bytes.NewBufferString("{}"))
+	response, err = client.Get(httpServer.URL + "/state")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +79,7 @@ func TestKratosHTTPServerPreservesLegacyAndGeneratedRoutes(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&generated); err != nil {
 		t.Fatal(err)
 	}
-	if generated.ID != registered.ID || generated.LifeNumber != "1" {
-		t.Fatalf("generated state = %#v, registered id = %q", generated, registered.ID)
+	if generated.ID != registered.State.ID || generated.LifeNumber != "1" {
+		t.Fatalf("generated state = %#v, registered id = %q", generated, registered.State.ID)
 	}
 }

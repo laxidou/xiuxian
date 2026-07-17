@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kratos/kratos/v2/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
@@ -17,8 +18,9 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	worldv1 "xiuxian/gen/go/xiuxian/v1"
-	worldrpc "xiuxian/internal/rpc"
-	"xiuxian/internal/world"
+	"xiuxian/internal/biz"
+	"xiuxian/internal/data"
+	worldservice "xiuxian/internal/service"
 )
 
 func TestMCPListsToolsAndCallsAuthoritativeGameAPI(t *testing.T) {
@@ -36,18 +38,18 @@ func TestMCPListsToolsAndCallsAuthoritativeGameAPI(t *testing.T) {
 }
 
 func TestMCPProductionGatewayUsesGeneratedGRPCContract(t *testing.T) {
-	service := world.NewService(world.NewManualClock(time.UnixMilli(1_700_000_000_000)))
-	_, state, err := service.Register("grpc-owner", "a sufficiently long password", "契约真人")
+	service := biz.NewService(biz.NewManualClock(time.UnixMilli(1_700_000_000_000)))
+	_, state, err := service.Register(context.Background(), "grpc-owner", "a sufficiently long password", "契约真人")
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := service.RotateMCPKey(state.ID)
+	key, err := service.RotateMCPKey(context.Background(), state.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
-	worldv1.RegisterWorldServiceServer(server, worldrpc.NewServer(service))
+	worldv1.RegisterWorldServiceServer(server, worldservice.NewWorldService(biz.NewWorldUsecase(service, log.DefaultLogger), data.NewMemoryRateLimiter()))
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	connection, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {

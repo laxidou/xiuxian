@@ -1,4 +1,4 @@
-package world
+package biz
 
 import (
 	"context"
@@ -78,6 +78,7 @@ type Role struct {
 	Trajectory            *rules.Trajectory
 	TrajectoryCultivation rules.Cultivation
 	StateVersion          int64
+	RuleVersion           int32
 	NextDeathAt           time.Time
 	LastScanAt            time.Time
 	MCPKeyHash            [32]byte
@@ -99,6 +100,7 @@ type State struct {
 	Position        PublicPosition `json:"position"`
 	MovementState   MovementState  `json:"movement_state"`
 	StateVersion    int64          `json:"state_version"`
+	RuleVersion     int32          `json:"rule_version"`
 }
 
 type PublicPosition struct {
@@ -195,9 +197,11 @@ type OpportunitySignal struct {
 }
 
 type ScanResult struct {
-	Roles         []ScanRole          `json:"roles"`
-	Opportunities []OpportunitySignal `json:"opportunities"`
-	HasMore       bool                `json:"has_more"`
+	Roles                  []ScanRole          `json:"roles"`
+	Opportunities          []OpportunitySignal `json:"opportunities"`
+	HasMore                bool                `json:"has_more"`
+	TruncatedRoles         int                 `json:"truncated_roles"`
+	TruncatedOpportunities int                 `json:"truncated_opportunities"`
 }
 
 type ConversationMessage struct {
@@ -248,6 +252,8 @@ type authorityTimeStore interface {
 	AuthorityNow(context.Context) (time.Time, error)
 }
 
+const initialWorldMaxX rules.Coordinate = 1
+
 func NewService(clock Clock) *Service {
 	if clock == nil {
 		clock = SystemClock{}
@@ -263,6 +269,7 @@ func NewService(clock Clock) *Service {
 		opportunities:       make(map[string]*Opportunity),
 		conversations:       make(map[string]*Conversation),
 		conversationResults: make(map[string]string),
+		maxX:                initialWorldMaxX,
 	}
 }
 
@@ -283,7 +290,7 @@ func NewPersistentService(ctx context.Context, clock Clock, store DurableStore) 
 
 func (s *Service) Clock() Clock { return s.clock }
 
-func (s *Service) Register(accountName, password, roleName string) (string, State, error) {
+func (s *Service) Register(ctx context.Context, accountName, password, roleName string) (string, State, error) {
 	accountName = strings.TrimSpace(accountName)
 	roleName = strings.TrimSpace(roleName)
 	if accountName == "" || roleName == "" || len(password) < 12 || len(accountName) > 128 || len(roleName) > 64 {
@@ -303,7 +310,7 @@ func (s *Service) Register(accountName, password, roleName string) (string, Stat
 		return "", State{}, ErrConflict
 	}
 
-	now := s.authoritativeNowLocked(nil)
+	now := s.authoritativeNowLocked(ctx, nil)
 	s.nextID++
 	roleID := fmt.Sprintf("role_%d", s.nextID)
 	role := &Role{
@@ -317,6 +324,7 @@ func (s *Service) Register(accountName, password, roleName string) (string, Stat
 		LastSettledAt: now,
 		Position:      rules.Position{},
 		StateVersion:  1,
+		RuleVersion:   rules.Version,
 		NextDeathAt:   now.Add(rules.NextNaturalDeathAfter(0, 0)),
 	}
 	s.accounts[accountName] = account{passwordHash: hash, roleID: roleID}
@@ -328,13 +336,13 @@ func (s *Service) Register(accountName, password, roleName string) (string, Stat
 	}
 	s.sessions[tokenHash] = session{RoleID: roleID, ExpiresAt: now.Add(24 * time.Hour)}
 	state := s.stateLocked(role, now)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return "", State{}, err
 	}
 	return token, state, nil
 }
 
-func (s *Service) Login(accountName, password string) (string, State, error) {
+func (s *Service) Login(ctx context.Context, accountName, password string) (string, State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry, ok := s.accounts[strings.TrimSpace(accountName)]
@@ -346,16 +354,19 @@ func (s *Service) Login(accountName, password string) (string, State, error) {
 		return "", State{}, err
 	}
 	role := s.roles[entry.roleID]
-	now := s.authoritativeNowLocked(role)
+	now := s.authoritativeNowLocked(ctx, role)
 	s.sessions[tokenHash] = session{RoleID: entry.roleID, ExpiresAt: now.Add(24 * time.Hour)}
 	state := s.stateLocked(role, now)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return "", State{}, err
 	}
 	return token, state, nil
 }
 
-func (s *Service) AuthenticateSession(token string) (string, error) {
+func (s *Service) AuthenticateSession(ctx context.Context, token string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if token == "" {
 		return "", ErrUnauthenticated
 	}
@@ -370,14 +381,17 @@ func (s *Service) AuthenticateSession(token string) (string, error) {
 	return value.RoleID, nil
 }
 
-func (s *Service) Logout(token string) error {
+func (s *Service) Logout(ctx context.Context, token string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sha256.Sum256([]byte(token)))
-	return s.persistLocked()
+	return s.persistLocked(ctx)
 }
 
-func (s *Service) AuthenticateAPIKey(key string) (string, error) {
+func (s *Service) AuthenticateAPIKey(ctx context.Context, key string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if key == "" {
 		return "", ErrUnauthenticated
 	}
@@ -392,7 +406,7 @@ func (s *Service) AuthenticateAPIKey(key string) (string, error) {
 	return "", ErrUnauthenticated
 }
 
-func (s *Service) RotateMCPKey(roleID string) (string, error) {
+func (s *Service) RotateMCPKey(ctx context.Context, roleID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	role, ok := s.roles[roleID]
@@ -406,14 +420,14 @@ func (s *Service) RotateMCPKey(roleID string) (string, error) {
 	key := "xiu_" + token
 	role.MCPKeyHash = sha256.Sum256([]byte(key))
 	role.StateVersion++
-	s.appendEventLocked(role, s.authoritativeNowLocked(role), "mcp_key_rotated", "MCP API Key 已轮换", nil)
-	if err := s.persistLocked(); err != nil {
+	s.appendEventLocked(role, s.authoritativeNowLocked(ctx, role), "mcp_key_rotated", "MCP API Key 已轮换", nil)
+	if err := s.persistLocked(ctx); err != nil {
 		return "", err
 	}
 	return key, nil
 }
 
-func (s *Service) RevokeMCPKey(roleID string) error {
+func (s *Service) RevokeMCPKey(ctx context.Context, roleID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	role, ok := s.roles[roleID]
@@ -422,26 +436,26 @@ func (s *Service) RevokeMCPKey(roleID string) error {
 	}
 	role.MCPKeyHash = [32]byte{}
 	role.StateVersion++
-	s.appendEventLocked(role, s.authoritativeNowLocked(role), "mcp_key_revoked", "MCP API Key 已撤销", nil)
-	return s.persistLocked()
+	s.appendEventLocked(role, s.authoritativeNowLocked(ctx, role), "mcp_key_revoked", "MCP API Key 已撤销", nil)
+	return s.persistLocked(ctx)
 }
 
-func (s *Service) State(roleID string) (State, error) {
+func (s *Service) State(ctx context.Context, roleID string) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	role, ok := s.roles[roleID]
 	if !ok {
 		return State{}, ErrUnauthenticated
 	}
-	now := s.authoritativeNowLocked(role)
+	now := s.authoritativeNowLocked(ctx, role)
 	state := s.stateLocked(role, now)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return State{}, err
 	}
 	return state, nil
 }
 
-func (s *Service) SettleDeadline(roleID string, expectedVersion int64) (bool, error) {
+func (s *Service) SettleDeadline(ctx context.Context, roleID string, expectedVersion int64) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	role, ok := s.roles[roleID]
@@ -452,15 +466,15 @@ func (s *Service) SettleDeadline(roleID string, expectedVersion int64) (bool, er
 		return false, nil
 	}
 	before := role.Status
-	now := s.authoritativeNowLocked(role)
+	now := s.authoritativeNowLocked(ctx, role)
 	s.stateLocked(role, now)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return false, err
 	}
 	return before == RoleAlive && role.Status == RolePendingReincarnation, nil
 }
 
-func (s *Service) Move(roleID, idempotencyKey string, target rules.Position, expectation CommandExpectation) (State, error) {
+func (s *Service) Move(ctx context.Context, roleID, idempotencyKey string, target rules.Position, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -476,7 +490,7 @@ func (s *Service) Move(roleID, idempotencyKey string, target rules.Position, exp
 	if err := validateCommandExpectation(role, expectation); err != nil {
 		return State{}, err
 	}
-	now := s.authoritativeNowLocked(role)
+	now := s.authoritativeNowLocked(ctx, role)
 	current := s.stateLocked(role, now)
 	if role.Status != RoleAlive {
 		return State{}, ErrNotAlive
@@ -489,13 +503,13 @@ func (s *Service) Move(roleID, idempotencyKey string, target rules.Position, exp
 	role.StateVersion++
 	result := s.stateLocked(role, now)
 	s.rememberIdempotencyLocked(roleID, idempotencyKey, result)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return State{}, err
 	}
 	return result, nil
 }
 
-func (s *Service) Stop(roleID, idempotencyKey string, expectation CommandExpectation) (State, error) {
+func (s *Service) Stop(ctx context.Context, roleID, idempotencyKey string, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -511,7 +525,7 @@ func (s *Service) Stop(roleID, idempotencyKey string, expectation CommandExpecta
 	if err := validateCommandExpectation(role, expectation); err != nil {
 		return State{}, err
 	}
-	now := s.authoritativeNowLocked(role)
+	now := s.authoritativeNowLocked(ctx, role)
 	current := s.stateLocked(role, now)
 	if role.Status != RoleAlive {
 		return State{}, ErrNotAlive
@@ -523,13 +537,13 @@ func (s *Service) Stop(roleID, idempotencyKey string, expectation CommandExpecta
 	s.expandBoundsLocked(role.Position)
 	result := s.stateLocked(role, now)
 	s.rememberIdempotencyLocked(roleID, idempotencyKey, result)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return State{}, err
 	}
 	return result, nil
 }
 
-func (s *Service) Scan(roleID string, expectation CommandExpectation) (ScanResult, error) {
+func (s *Service) Scan(ctx context.Context, roleID string, expectation CommandExpectation) (ScanResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	scanner, ok := s.roles[roleID]
@@ -539,7 +553,7 @@ func (s *Service) Scan(roleID string, expectation CommandExpectation) (ScanResul
 	if err := validateCommandExpectation(scanner, expectation); err != nil {
 		return ScanResult{}, err
 	}
-	now := s.authoritativeNowLocked(scanner)
+	now := s.authoritativeNowLocked(ctx, scanner)
 	scannerState := s.stateLocked(scanner, now)
 	if scanner.Status != RoleAlive {
 		return ScanResult{}, ErrNotAlive
@@ -567,10 +581,14 @@ func (s *Service) Scan(roleID string, expectation CommandExpectation) (ScanResul
 		position := targetState.Position
 		entry.Position = &position
 		if scannerState.RealmLevel > targetState.RealmLevel {
-			s.appendEventLocked(target, now, "scanned", "被更高境界角色神识扫描", map[string]any{
+			data := map[string]any{
 				"direction":    direction(targetPosition, scannerPosition),
 				"scanner_name": scanner.Name,
-			})
+			}
+			if distance <= float64(targetState.SenseRadius) {
+				data["scanner_position"] = scannerState.Position
+			}
+			s.appendEventLocked(target, now, "scanned", "被更高境界角色神识扫描", data)
 		}
 		result.Roles = append(result.Roles, entry)
 	}
@@ -584,20 +602,22 @@ func (s *Service) Scan(roleID string, expectation CommandExpectation) (ScanResul
 	}
 	sortScan(result.Roles, result.Opportunities)
 	if len(result.Roles) > 100 {
+		result.TruncatedRoles = len(result.Roles) - 100
 		result.Roles = result.Roles[:100]
 		result.HasMore = true
 	}
 	if len(result.Opportunities) > 20 {
+		result.TruncatedOpportunities = len(result.Opportunities) - 20
 		result.Opportunities = result.Opportunities[:20]
 		result.HasMore = true
 	}
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return ScanResult{}, err
 	}
 	return result, nil
 }
 
-func (s *Service) Transfer(roleID, targetID, idempotencyKey string, amountMinutes int64, expectation CommandExpectation) (State, error) {
+func (s *Service) Transfer(ctx context.Context, roleID, targetID, idempotencyKey string, amountMinutes int64, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -620,7 +640,7 @@ func (s *Service) Transfer(roleID, targetID, idempotencyKey string, amountMinute
 	if !ok || receiver == sender {
 		return State{}, ErrNotFound
 	}
-	now := s.authoritativeNowLocked(sender)
+	now := s.authoritativeNowLocked(ctx, sender)
 	senderState := s.stateLocked(sender, now)
 	receiverState := s.stateLocked(receiver, now)
 	if sender.Status != RoleAlive || receiver.Status != RoleAlive {
@@ -656,13 +676,13 @@ func (s *Service) Transfer(roleID, targetID, idempotencyKey string, amountMinute
 	}
 	result := s.stateLocked(sender, now)
 	s.rememberIdempotencyLocked(roleID, idempotencyKey, result)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return State{}, err
 	}
 	return result, nil
 }
 
-func (s *Service) Seize(roleID, targetID, idempotencyKey string, expectation CommandExpectation) (State, error) {
+func (s *Service) Seize(ctx context.Context, roleID, targetID, idempotencyKey string, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -682,7 +702,7 @@ func (s *Service) Seize(roleID, targetID, idempotencyKey string, expectation Com
 	if !ok || target == attacker {
 		return State{}, ErrNotFound
 	}
-	now := s.authoritativeNowLocked(attacker)
+	now := s.authoritativeNowLocked(ctx, attacker)
 	attackerState := s.stateLocked(attacker, now)
 	targetState := s.stateLocked(target, now)
 	if attacker.Status != RoleAlive || target.Status != RoleAlive {
@@ -704,13 +724,13 @@ func (s *Service) Seize(roleID, targetID, idempotencyKey string, expectation Com
 	s.appendEventLocked(attacker, now, "seizure", "夺取"+target.Name+"全部修为", map[string]any{"target_id": target.ID, "cultivation": taken.Points()})
 	result := s.stateLocked(attacker, now)
 	s.rememberIdempotencyLocked(roleID, idempotencyKey, result)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return State{}, err
 	}
 	return result, nil
 }
 
-func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string, expectation CommandExpectation) (Conversation, error) {
+func (s *Service) RequestConversation(ctx context.Context, roleID, targetID, idempotencyKey string, expectation CommandExpectation) (Conversation, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return Conversation{}, ErrIdempotencyKey
 	}
@@ -731,7 +751,7 @@ func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string, e
 	if !ok || recipient == requester {
 		return Conversation{}, ErrNotFound
 	}
-	now := s.authoritativeNowLocked(requester)
+	now := s.authoritativeNowLocked(ctx, requester)
 	requesterState := s.stateLocked(requester, now)
 	recipientState := s.stateLocked(recipient, now)
 	if requester.Status != RoleAlive || recipient.Status != RoleAlive {
@@ -750,13 +770,13 @@ func (s *Service) RequestConversation(roleID, targetID, idempotencyKey string, e
 	s.conversationResults[commandKey] = id
 	s.appendEventLocked(requester, now, "conversation_requested", "向"+recipient.Name+"请求交谈", map[string]any{"conversation_id": id})
 	s.appendEventLocked(recipient, now, "conversation_incoming", requester.Name+"请求交谈", map[string]any{"conversation_id": id})
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return Conversation{}, err
 	}
 	return *conversation, nil
 }
 
-func (s *Service) RespondConversation(roleID, conversationID, idempotencyKey, action string, expectation CommandExpectation) (Conversation, error) {
+func (s *Service) RespondConversation(ctx context.Context, roleID, conversationID, idempotencyKey, action string, expectation CommandExpectation) (Conversation, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return Conversation{}, ErrIdempotencyKey
 	}
@@ -772,7 +792,7 @@ func (s *Service) RespondConversation(roleID, conversationID, idempotencyKey, ac
 	if err := validateCommandExpectation(s.roles[roleID], expectation); err != nil {
 		return Conversation{}, err
 	}
-	now := s.authoritativeNowLocked(s.roles[roleID])
+	now := s.authoritativeNowLocked(ctx, s.roles[roleID])
 	s.stateLocked(s.roles[conversation.RequesterID], now)
 	s.stateLocked(s.roles[conversation.RecipientID], now)
 	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
@@ -798,13 +818,13 @@ func (s *Service) RespondConversation(roleID, conversationID, idempotencyKey, ac
 	conversation.UpdatedAt = now.UnixMilli()
 	s.conversationResults[commandKey] = conversationID
 	s.appendEventLocked(s.roles[conversation.RequesterID], now, "conversation_responded", "交谈请求状态已更新", map[string]any{"conversation_id": conversationID, "status": conversation.Status})
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return Conversation{}, err
 	}
 	return *conversation, nil
 }
 
-func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey, content string, expectation CommandExpectation) (ConversationMessage, error) {
+func (s *Service) SendConversationMessage(ctx context.Context, roleID, conversationID, idempotencyKey, content string, expectation CommandExpectation) (ConversationMessage, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return ConversationMessage{}, ErrIdempotencyKey
 	}
@@ -824,7 +844,7 @@ func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey
 	if err := validateCommandExpectation(s.roles[roleID], expectation); err != nil {
 		return ConversationMessage{}, err
 	}
-	now := s.authoritativeNowLocked(s.roles[roleID])
+	now := s.authoritativeNowLocked(ctx, s.roles[roleID])
 	s.stateLocked(s.roles[conversation.RequesterID], now)
 	s.stateLocked(s.roles[conversation.RecipientID], now)
 	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
@@ -848,13 +868,13 @@ func (s *Service) SendConversationMessage(roleID, conversationID, idempotencyKey
 		otherID = conversation.RecipientID
 	}
 	s.appendEventLocked(s.roles[otherID], now, "conversation_message", "收到新的交谈消息", map[string]any{"conversation_id": conversationID})
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return ConversationMessage{}, err
 	}
 	return message, nil
 }
 
-func (s *Service) CloseConversation(roleID, conversationID, idempotencyKey string, expectation CommandExpectation) (Conversation, error) {
+func (s *Service) CloseConversation(ctx context.Context, roleID, conversationID, idempotencyKey string, expectation CommandExpectation) (Conversation, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return Conversation{}, ErrIdempotencyKey
 	}
@@ -870,7 +890,7 @@ func (s *Service) CloseConversation(roleID, conversationID, idempotencyKey strin
 	if err := validateCommandExpectation(s.roles[roleID], expectation); err != nil {
 		return Conversation{}, err
 	}
-	now := s.authoritativeNowLocked(s.roles[roleID])
+	now := s.authoritativeNowLocked(ctx, s.roles[roleID])
 	s.stateLocked(s.roles[conversation.RequesterID], now)
 	s.stateLocked(s.roles[conversation.RecipientID], now)
 	if s.roles[conversation.RequesterID].Status != RoleAlive || s.roles[conversation.RecipientID].Status != RoleAlive {
@@ -883,13 +903,16 @@ func (s *Service) CloseConversation(roleID, conversationID, idempotencyKey strin
 	conversation.Status = ConversationClosed
 	conversation.UpdatedAt = now.UnixMilli()
 	s.conversationResults[commandKey] = conversationID
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return Conversation{}, err
 	}
 	return *conversation, nil
 }
 
-func (s *Service) Conversations(roleID string) ([]Conversation, error) {
+func (s *Service) Conversations(ctx context.Context, roleID string) ([]Conversation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.roles[roleID]; !ok {
@@ -907,7 +930,10 @@ func (s *Service) Conversations(roleID string) ([]Conversation, error) {
 	return result, nil
 }
 
-func (s *Service) Events(roleID string, after int64, limit int) ([]Event, error) {
+func (s *Service) Events(ctx context.Context, roleID string, after int64, limit int) ([]Event, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.roles[roleID]; !ok {
@@ -929,13 +955,16 @@ func (s *Service) Events(roleID string, after int64, limit int) ([]Event, error)
 	return result, nil
 }
 
-func (s *Service) Bounds() Bounds {
+func (s *Service) Bounds(ctx context.Context) (Bounds, error) {
+	if err := ctx.Err(); err != nil {
+		return Bounds{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return Bounds{MinX: s.minX.Units(), MaxX: s.maxX.Units(), MinY: s.minY.Units(), MaxY: s.maxY.Units()}
+	return Bounds{MinX: s.minX.Units(), MaxX: s.maxX.Units(), MinY: s.minY.Units(), MaxY: s.maxY.Units()}, nil
 }
 
-func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Position, expectation CommandExpectation) (State, error) {
+func (s *Service) Reincarnate(ctx context.Context, roleID, idempotencyKey string, position *rules.Position, expectation CommandExpectation) (State, error) {
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return State{}, ErrIdempotencyKey
 	}
@@ -951,7 +980,7 @@ func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Pos
 	if err := validateCommandExpectation(role, expectation); err != nil {
 		return State{}, err
 	}
-	now := s.authoritativeNowLocked(role)
+	now := s.authoritativeNowLocked(ctx, role)
 	s.stateLocked(role, now)
 	if role.Status != RolePendingReincarnation {
 		return State{}, ErrForbidden
@@ -988,16 +1017,16 @@ func (s *Service) Reincarnate(roleID, idempotencyKey string, position *rules.Pos
 	s.appendEventLocked(role, now, "reincarnation", "完成转世", nil)
 	result := s.stateLocked(role, now)
 	s.rememberIdempotencyLocked(roleID, idempotencyKey, result)
-	if err := s.persistLocked(); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return State{}, err
 	}
 	return result, nil
 }
 
-func (s *Service) authoritativeNowLocked(role *Role) time.Time {
+func (s *Service) authoritativeNowLocked(ctx context.Context, role *Role) time.Time {
 	now := s.clock.Now().UTC()
 	if databaseClock, ok := s.store.(authorityTimeStore); ok {
-		if databaseNow, err := databaseClock.AuthorityNow(context.Background()); err == nil {
+		if databaseNow, err := databaseClock.AuthorityNow(ctx); err == nil {
 			now = databaseNow.UTC()
 		} else if role != nil {
 			now = role.LastSettledAt
@@ -1110,6 +1139,7 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 		Position:        PublicPosition{X: position.X.Units(), Y: position.Y.Units()},
 		MovementState:   movementState,
 		StateVersion:    role.StateVersion,
+		RuleVersion:     role.RuleVersion,
 	}
 }
 

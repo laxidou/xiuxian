@@ -23,6 +23,7 @@ type Server struct {
 
 type Data struct {
 	DatabaseURL string
+	RedisURL    string
 }
 
 func Load() *Config {
@@ -42,7 +43,10 @@ func Load() *Config {
 			WorkerToken:  os.Getenv("WORKER_TOKEN"),
 			Version:      version,
 		},
-		Data: Data{DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL"))},
+		Data: Data{
+			DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
+			RedisURL:    strings.TrimSpace(os.Getenv("REDIS_URL")),
+		},
 	}
 }
 

@@ -46,12 +46,12 @@ scripts/smoke-compose.sh
 
 ## 健康检查
 
-- `GET /api/v1/healthz`：经 Caddy 验证 Web 到 game-server 的 HTTP 路径和版本。
+- `GET /healthz`：经 Caddy 验证 Web 到 game-server 的 HTTP 路径和版本。
 - game-server 容器 `/healthz`：authority HTTP 进程。
 - mcp-gateway 容器 `/healthz`：会调用标准 gRPC Health，只有 game-server gRPC 为 `SERVING` 时才健康。
 - PostgreSQL 使用 `pg_isready`；Redis 使用 `PING`。
 
-Redis 故障是可降级故障，PostgreSQL 故障是权威状态故障。Redis 清空后重启 Worker 会从 `roles`/`lives` 重建 `world:death_deadlines`。
+Redis 数据丢失可从 PostgreSQL 重建；Redis 连接不可用时，限流会 fail closed，`/healthz` 返回 503 并通过 `redis: unavailable` 与 PostgreSQL 权威状态故障区分。Redis 清空后重启 Worker 会从 `roles`/`lives` 重建 `world:death_deadlines`。
 
 ## 数据库迁移
 

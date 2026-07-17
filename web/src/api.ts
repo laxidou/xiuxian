@@ -1,7 +1,13 @@
 import { OpenAPI } from './generated/core/OpenAPI'
+import type { v1AuthResponse } from './generated/models/v1AuthResponse'
+import type { v1Conversation } from './generated/models/v1Conversation'
+import type { v1ConversationMessage } from './generated/models/v1ConversationMessage'
 import type { rpcStatus } from './generated/models/rpcStatus'
 import type { v1RoleState } from './generated/models/v1RoleState'
+import type { v1ScanResponse } from './generated/models/v1ScanResponse'
+import type { v1WorldEvent } from './generated/models/v1WorldEvent'
 import type { v1WorldBounds } from './generated/models/v1WorldBounds'
+import { AuthServiceService } from './generated/services/AuthServiceService'
 import { WorldServiceService } from './generated/services/WorldServiceService'
 
 OpenAPI.WITH_CREDENTIALS = true
@@ -28,6 +34,7 @@ export type RoleState = {
   position: Position
   movement_state: 'idle' | 'moving'
   state_version: number
+  rule_version: number
 }
 
 export type WorldEvent = {
@@ -43,6 +50,8 @@ export type ScanResult = {
   roles: Array<{ id: string; name: string; realm: string; status: string; distance: number; position?: Position }>
   opportunities: Array<{ message: string; distance: number }>
   has_more: boolean
+  truncated_roles: number
+  truncated_opportunities: number
 }
 
 export type Conversation = {
@@ -73,50 +82,67 @@ const rememberState = (state: RoleState) => {
   return state
 }
 
-const command = <T>(path: string, body: unknown, key = crypto.randomUUID()) => {
+const expectation = () => {
   if (!commandExpectation) throw new Error('请先刷新角色状态')
-  return request<T>(path, {
-    method: 'POST',
-    body: JSON.stringify(body),
-    headers: {
-      'Idempotency-Key': key,
-      'X-Expected-Life-Number': String(commandExpectation.lifeNumber),
-      'X-Expected-State-Version': String(commandExpectation.stateVersion),
-    },
-  })
+  return {
+    expectedLifeNumber: String(commandExpectation.lifeNumber),
+    expectedStateVersion: String(commandExpectation.stateVersion),
+  }
 }
 
-const stateCommand = async (path: string, body: unknown) => rememberState(await command<RoleState>(path, body))
+const idempotent = () => ({ idempotencyKey: crypto.randomUUID(), ...expectation() })
 
 export const api = {
-  health: () => request<Health>('/api/v1/healthz'),
-  register: async (account: string, password: string, role_name: string) => rememberState(await request<RoleState>('/api/v1/auth/register', { method: 'POST', body: JSON.stringify({ account, password, role_name }) })),
-  login: async (account: string, password: string) => rememberState(await request<RoleState>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ account, password }) })),
-  logout: async () => { await request<void>('/api/v1/auth/logout', { method: 'POST', body: '{}' }); commandExpectation = null },
-  state: async () => rememberState(contractState(await WorldServiceService.worldServiceGetState({}))),
-  bounds: async () => contractBounds(await WorldServiceService.worldServiceGetWorldBounds({})),
-  move: (x: number, y: number) => stateCommand('/api/v1/movement/move', { x, y }),
-  stop: () => stateCommand('/api/v1/movement/stop', {}),
-  scan: () => command<ScanResult>('/api/v1/scan', {}),
-  transfer: (target_id: string, amount_minutes: number) => stateCommand('/api/v1/cultivation/transfer', { target_id, amount_minutes }),
-  seize: (target_id: string) => stateCommand('/api/v1/cultivation/seize', { target_id }),
-  reincarnate: (position?: Position) => stateCommand('/api/v1/reincarnate', position ? position : { random: true }),
-  events: () => request<{ events: WorldEvent[] }>('/api/v1/events'),
-  conversations: () => request<{ conversations: Conversation[] }>('/api/v1/conversations'),
-  requestConversation: (target_id: string) => command<Conversation>('/api/v1/conversations', { target_id }),
-  respondConversation: (id: string, action: 'accept' | 'reject' | 'ignore') => command<Conversation>(`/api/v1/conversations/${id}/respond`, { action }),
-  sendMessage: (id: string, content: string) => command(`/api/v1/conversations/${id}/messages`, { content }),
-  closeConversation: (id: string) => command<Conversation>(`/api/v1/conversations/${id}/close`, {}),
-  rotateMCPKey: async () => { const result = await request<{ api_key: string }>('/api/v1/mcp-key/rotate', { method: 'POST', body: '{}' }); await api.state(); return result },
-  revokeMCPKey: async () => { await request<void>('/api/v1/mcp-key/revoke', { method: 'POST', body: '{}' }); await api.state() },
+  health: () => request<Health>('/healthz'),
+  register: async (account: string, password: string, roleName: string) => rememberState(contractAuthState(await AuthServiceService.authServiceRegister({ account, password, roleName }))),
+  login: async (account: string, password: string) => rememberState(contractAuthState(await AuthServiceService.authServiceLogin({ account, password }))),
+  logout: async () => { unwrap(await AuthServiceService.authServiceLogout()); commandExpectation = null },
+  state: async () => rememberState(contractState(unwrap(await WorldServiceService.worldServiceGetState()))),
+  bounds: async () => contractBounds(unwrap(await WorldServiceService.worldServiceGetWorldBounds())),
+  move: async (x: number, y: number) => rememberState(contractState(unwrap(await WorldServiceService.worldServiceMove({
+    ...idempotent(),
+    target: { xMilliunits: String(Math.round(x * 1000)), yMilliunits: String(Math.round(y * 1000)) },
+  })))),
+  stop: async () => rememberState(contractState(unwrap(await WorldServiceService.worldServiceStop(idempotent())))),
+  scan: async () => contractScan(unwrap(await WorldServiceService.worldServiceScan(expectation()))),
+  transfer: async (targetId: string, amountMinutes: number) => rememberState(contractState(unwrap(await WorldServiceService.worldServiceTransferCultivation({
+    ...idempotent(), targetId, amountMinutes: String(amountMinutes),
+  })))),
+  seize: async (targetId: string) => rememberState(contractState(unwrap(await WorldServiceService.worldServiceSeizeCultivation({ ...idempotent(), targetId })))),
+  reincarnate: async (position?: Position) => rememberState(contractState(unwrap(await WorldServiceService.worldServiceReincarnate(position ? {
+    ...idempotent(),
+    position: { xMilliunits: String(Math.round(position.x * 1000)), yMilliunits: String(Math.round(position.y * 1000)) },
+  } : { ...idempotent(), random: true })))),
+  events: async () => ({ events: contractEvents(unwrap(await WorldServiceService.worldServiceListRecentEvents(undefined, 100)).events ?? []) }),
+  conversations: async () => ({ conversations: (unwrap(await WorldServiceService.worldServiceListConversations()).conversations ?? []).map(contractConversation) }),
+  requestConversation: async (targetId: string) => contractConversation(unwrap(await WorldServiceService.worldServiceRequestConversation({ ...idempotent(), targetId }))),
+  respondConversation: async (conversationId: string, action: 'accept' | 'reject' | 'ignore') => contractConversation(unwrap(await WorldServiceService.worldServiceRespondConversation({ ...idempotent(), conversationId, action }))),
+  sendMessage: async (conversationId: string, content: string) => contractConversationMessage(unwrap(await WorldServiceService.worldServiceSendConversationMessage({ ...idempotent(), conversationId, content }))),
+  closeConversation: async (conversationId: string) => contractConversation(unwrap(await WorldServiceService.worldServiceCloseConversation({ ...idempotent(), conversationId }))),
+  rotateMCPKey: async () => {
+    const result = unwrap(await AuthServiceService.authServiceRotateMcpKey({}))
+    await api.state()
+    return { api_key: result.apiKey ?? '' }
+  },
+  revokeMCPKey: async () => { unwrap(await AuthServiceService.authServiceRevokeMcpKey()); await api.state() },
 }
 
-function isRPCStatus(response: v1RoleState | v1WorldBounds | rpcStatus): response is rpcStatus {
+function isRPCStatus(response: object): response is rpcStatus {
   return 'code' in response || ('message' in response && !('id' in response))
 }
 
-function contractState(response: v1RoleState | rpcStatus): RoleState {
+function unwrap<T extends object>(response: T | rpcStatus): T {
   if (isRPCStatus(response)) throw new Error(response.message ?? '契约请求失败')
+  return response
+}
+
+function contractAuthState(response: v1AuthResponse | rpcStatus): RoleState {
+  const result = unwrap(response)
+  if (!result.state) throw new Error('鉴权响应缺少角色状态')
+  return contractState(result.state)
+}
+
+function contractState(response: v1RoleState): RoleState {
   return {
     id: response.id ?? '',
     name: response.name ?? '',
@@ -132,15 +158,67 @@ function contractState(response: v1RoleState | rpcStatus): RoleState {
     position: { x: Number(response.position?.xMilliunits ?? 0) / 1000, y: Number(response.position?.yMilliunits ?? 0) / 1000 },
     movement_state: response.movementState as RoleState['movement_state'],
     state_version: Number(response.stateVersion ?? 0),
+    rule_version: response.ruleVersion ?? 0,
   }
 }
 
-function contractBounds(response: v1WorldBounds | rpcStatus) {
-  if (isRPCStatus(response)) throw new Error(response.message ?? '契约请求失败')
+function contractBounds(response: v1WorldBounds) {
   return {
     min_x: Number(response.minXMilliunits ?? 0) / 1000,
     max_x: Number(response.maxXMilliunits ?? 0) / 1000,
     min_y: Number(response.minYMilliunits ?? 0) / 1000,
     max_y: Number(response.maxYMilliunits ?? 0) / 1000,
   }
+}
+
+function contractScan(response: v1ScanResponse): ScanResult {
+  return {
+    roles: (response.roles ?? []).map((role) => ({
+      id: role.id ?? '',
+      name: role.name ?? '',
+      realm: role.realm ?? '',
+      status: role.status ?? '',
+      distance: role.distance ?? 0,
+      position: role.position ? {
+        x: Number(role.position.xMilliunits ?? 0) / 1000,
+        y: Number(role.position.yMilliunits ?? 0) / 1000,
+      } : undefined,
+    })),
+    opportunities: (response.opportunities ?? []).map((item) => ({ message: item.message ?? '', distance: item.distance ?? 0 })),
+    has_more: response.hasMore ?? false,
+    truncated_roles: response.truncatedRoles ?? 0,
+    truncated_opportunities: response.truncatedOpportunities ?? 0,
+  }
+}
+
+function contractConversation(value: v1Conversation): Conversation {
+  return {
+    id: value.id ?? '',
+    requester_id: value.requesterId ?? '',
+    recipient_id: value.recipientId ?? '',
+    status: value.status ?? '',
+    messages: (value.messages ?? []).map(contractConversationMessage),
+    updated_at: Number(value.updatedAtUnixMillis ?? 0),
+  }
+}
+
+function contractConversationMessage(value: v1ConversationMessage): Conversation['messages'][number] {
+  return {
+    id: Number(value.id ?? 0),
+    sender_id: value.senderId ?? '',
+    content: value.content ?? '',
+    trusted: false,
+    created_at: Number(value.createdAtUnixMillis ?? 0),
+  }
+}
+
+function contractEvents(values: v1WorldEvent[]): WorldEvent[] {
+  return values.map((event) => ({
+    id: Number(event.id ?? 0),
+    type: event.type ?? '',
+    message: event.message ?? '',
+    created_at: Number(event.createdAtUnixMillis ?? 0),
+    life_number: Number(event.lifeNumber ?? 0),
+    data: event.dataJson ? JSON.parse(event.dataJson) as Record<string, unknown> : undefined,
+  }))
 }

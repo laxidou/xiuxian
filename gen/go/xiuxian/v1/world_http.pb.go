@@ -10,6 +10,7 @@ import (
 	context "context"
 	http "github.com/go-kratos/kratos/v2/transport/http"
 	binding "github.com/go-kratos/kratos/v2/transport/http/binding"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -53,28 +54,25 @@ type WorldServiceHTTPServer interface {
 
 func RegisterWorldServiceHTTPServer(s *http.Server, srv WorldServiceHTTPServer) {
 	r := s.Route("/")
-	r.POST("/xiuxian.v1.WorldService/GetState", _WorldService_GetState0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/GetWorldBounds", _WorldService_GetWorldBounds0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/Scan", _WorldService_Scan0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/Move", _WorldService_Move0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/Stop", _WorldService_Stop0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/TransferCultivation", _WorldService_TransferCultivation0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/SeizeCultivation", _WorldService_SeizeCultivation0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/Reincarnate", _WorldService_Reincarnate0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/ListRecentEvents", _WorldService_ListRecentEvents0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/ListConversations", _WorldService_ListConversations0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/RequestConversation", _WorldService_RequestConversation0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/RespondConversation", _WorldService_RespondConversation0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/SendConversationMessage", _WorldService_SendConversationMessage0_HTTP_Handler(srv))
-	r.POST("/xiuxian.v1.WorldService/CloseConversation", _WorldService_CloseConversation0_HTTP_Handler(srv))
+	r.GET("/state", _WorldService_GetState0_HTTP_Handler(srv))
+	r.GET("/world/bounds", _WorldService_GetWorldBounds0_HTTP_Handler(srv))
+	r.POST("/scans", _WorldService_Scan0_HTTP_Handler(srv))
+	r.POST("/movements", _WorldService_Move0_HTTP_Handler(srv))
+	r.POST("/movement-stops", _WorldService_Stop0_HTTP_Handler(srv))
+	r.POST("/cultivation-transfers", _WorldService_TransferCultivation0_HTTP_Handler(srv))
+	r.POST("/cultivation-seizures", _WorldService_SeizeCultivation0_HTTP_Handler(srv))
+	r.POST("/reincarnations", _WorldService_Reincarnate0_HTTP_Handler(srv))
+	r.GET("/events", _WorldService_ListRecentEvents0_HTTP_Handler(srv))
+	r.GET("/conversations", _WorldService_ListConversations0_HTTP_Handler(srv))
+	r.POST("/conversations", _WorldService_RequestConversation0_HTTP_Handler(srv))
+	r.POST("/conversation-responses", _WorldService_RespondConversation0_HTTP_Handler(srv))
+	r.POST("/conversation-messages", _WorldService_SendConversationMessage0_HTTP_Handler(srv))
+	r.POST("/conversation-closures", _WorldService_CloseConversation0_HTTP_Handler(srv))
 }
 
 func _WorldService_GetState0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in GetStateRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
 		if err := ctx.BindQuery(&in); err != nil {
 			return err
 		}
@@ -94,9 +92,6 @@ func _WorldService_GetState0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx h
 func _WorldService_GetWorldBounds0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in GetWorldBoundsRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
 		if err := ctx.BindQuery(&in); err != nil {
 			return err
 		}
@@ -248,9 +243,6 @@ func _WorldService_Reincarnate0_HTTP_Handler(srv WorldServiceHTTPServer) func(ct
 func _WorldService_ListRecentEvents0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in ListRecentEventsRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
 		if err := ctx.BindQuery(&in); err != nil {
 			return err
 		}
@@ -270,9 +262,6 @@ func _WorldService_ListRecentEvents0_HTTP_Handler(srv WorldServiceHTTPServer) fu
 func _WorldService_ListConversations0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in ListConversationsRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
 		if err := ctx.BindQuery(&in); err != nil {
 			return err
 		}
@@ -404,7 +393,7 @@ func NewWorldServiceHTTPClient(client *http.Client) WorldServiceHTTPClient {
 
 func (c *WorldServiceHTTPClientImpl) CloseConversation(ctx context.Context, in *CloseConversationRequest, opts ...http.CallOption) (*Conversation, error) {
 	var out Conversation
-	pattern := "/xiuxian.v1.WorldService/CloseConversation"
+	pattern := "/conversation-closures"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceCloseConversation))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -417,11 +406,11 @@ func (c *WorldServiceHTTPClientImpl) CloseConversation(ctx context.Context, in *
 
 func (c *WorldServiceHTTPClientImpl) GetState(ctx context.Context, in *GetStateRequest, opts ...http.CallOption) (*RoleState, error) {
 	var out RoleState
-	pattern := "/xiuxian.v1.WorldService/GetState"
-	path := binding.EncodeURL(pattern, in, false)
+	pattern := "/state"
+	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationWorldServiceGetState))
 	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -430,11 +419,11 @@ func (c *WorldServiceHTTPClientImpl) GetState(ctx context.Context, in *GetStateR
 
 func (c *WorldServiceHTTPClientImpl) GetWorldBounds(ctx context.Context, in *GetWorldBoundsRequest, opts ...http.CallOption) (*WorldBounds, error) {
 	var out WorldBounds
-	pattern := "/xiuxian.v1.WorldService/GetWorldBounds"
-	path := binding.EncodeURL(pattern, in, false)
+	pattern := "/world/bounds"
+	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationWorldServiceGetWorldBounds))
 	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -443,11 +432,11 @@ func (c *WorldServiceHTTPClientImpl) GetWorldBounds(ctx context.Context, in *Get
 
 func (c *WorldServiceHTTPClientImpl) ListConversations(ctx context.Context, in *ListConversationsRequest, opts ...http.CallOption) (*ListConversationsResponse, error) {
 	var out ListConversationsResponse
-	pattern := "/xiuxian.v1.WorldService/ListConversations"
-	path := binding.EncodeURL(pattern, in, false)
+	pattern := "/conversations"
+	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationWorldServiceListConversations))
 	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -456,11 +445,11 @@ func (c *WorldServiceHTTPClientImpl) ListConversations(ctx context.Context, in *
 
 func (c *WorldServiceHTTPClientImpl) ListRecentEvents(ctx context.Context, in *ListRecentEventsRequest, opts ...http.CallOption) (*ListRecentEventsResponse, error) {
 	var out ListRecentEventsResponse
-	pattern := "/xiuxian.v1.WorldService/ListRecentEvents"
-	path := binding.EncodeURL(pattern, in, false)
+	pattern := "/events"
+	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationWorldServiceListRecentEvents))
 	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +458,7 @@ func (c *WorldServiceHTTPClientImpl) ListRecentEvents(ctx context.Context, in *L
 
 func (c *WorldServiceHTTPClientImpl) Move(ctx context.Context, in *MoveRequest, opts ...http.CallOption) (*RoleState, error) {
 	var out RoleState
-	pattern := "/xiuxian.v1.WorldService/Move"
+	pattern := "/movements"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceMove))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -482,7 +471,7 @@ func (c *WorldServiceHTTPClientImpl) Move(ctx context.Context, in *MoveRequest, 
 
 func (c *WorldServiceHTTPClientImpl) Reincarnate(ctx context.Context, in *ReincarnateRequest, opts ...http.CallOption) (*RoleState, error) {
 	var out RoleState
-	pattern := "/xiuxian.v1.WorldService/Reincarnate"
+	pattern := "/reincarnations"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceReincarnate))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -495,7 +484,7 @@ func (c *WorldServiceHTTPClientImpl) Reincarnate(ctx context.Context, in *Reinca
 
 func (c *WorldServiceHTTPClientImpl) RequestConversation(ctx context.Context, in *RequestConversationRequest, opts ...http.CallOption) (*Conversation, error) {
 	var out Conversation
-	pattern := "/xiuxian.v1.WorldService/RequestConversation"
+	pattern := "/conversations"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceRequestConversation))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -508,7 +497,7 @@ func (c *WorldServiceHTTPClientImpl) RequestConversation(ctx context.Context, in
 
 func (c *WorldServiceHTTPClientImpl) RespondConversation(ctx context.Context, in *RespondConversationRequest, opts ...http.CallOption) (*Conversation, error) {
 	var out Conversation
-	pattern := "/xiuxian.v1.WorldService/RespondConversation"
+	pattern := "/conversation-responses"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceRespondConversation))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -521,7 +510,7 @@ func (c *WorldServiceHTTPClientImpl) RespondConversation(ctx context.Context, in
 
 func (c *WorldServiceHTTPClientImpl) Scan(ctx context.Context, in *ScanRequest, opts ...http.CallOption) (*ScanResponse, error) {
 	var out ScanResponse
-	pattern := "/xiuxian.v1.WorldService/Scan"
+	pattern := "/scans"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceScan))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -534,7 +523,7 @@ func (c *WorldServiceHTTPClientImpl) Scan(ctx context.Context, in *ScanRequest, 
 
 func (c *WorldServiceHTTPClientImpl) SeizeCultivation(ctx context.Context, in *SeizeCultivationRequest, opts ...http.CallOption) (*RoleState, error) {
 	var out RoleState
-	pattern := "/xiuxian.v1.WorldService/SeizeCultivation"
+	pattern := "/cultivation-seizures"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceSeizeCultivation))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -547,7 +536,7 @@ func (c *WorldServiceHTTPClientImpl) SeizeCultivation(ctx context.Context, in *S
 
 func (c *WorldServiceHTTPClientImpl) SendConversationMessage(ctx context.Context, in *SendConversationMessageRequest, opts ...http.CallOption) (*ConversationMessage, error) {
 	var out ConversationMessage
-	pattern := "/xiuxian.v1.WorldService/SendConversationMessage"
+	pattern := "/conversation-messages"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceSendConversationMessage))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -560,7 +549,7 @@ func (c *WorldServiceHTTPClientImpl) SendConversationMessage(ctx context.Context
 
 func (c *WorldServiceHTTPClientImpl) Stop(ctx context.Context, in *StopRequest, opts ...http.CallOption) (*RoleState, error) {
 	var out RoleState
-	pattern := "/xiuxian.v1.WorldService/Stop"
+	pattern := "/movement-stops"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceStop))
 	opts = append(opts, http.PathTemplate(pattern))
@@ -573,9 +562,217 @@ func (c *WorldServiceHTTPClientImpl) Stop(ctx context.Context, in *StopRequest, 
 
 func (c *WorldServiceHTTPClientImpl) TransferCultivation(ctx context.Context, in *TransferCultivationRequest, opts ...http.CallOption) (*RoleState, error) {
 	var out RoleState
-	pattern := "/xiuxian.v1.WorldService/TransferCultivation"
+	pattern := "/cultivation-transfers"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceTransferCultivation))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+const OperationAuthServiceLogin = "/xiuxian.v1.AuthService/Login"
+const OperationAuthServiceLogout = "/xiuxian.v1.AuthService/Logout"
+const OperationAuthServiceRegister = "/xiuxian.v1.AuthService/Register"
+const OperationAuthServiceRevokeMCPKey = "/xiuxian.v1.AuthService/RevokeMCPKey"
+const OperationAuthServiceRotateMCPKey = "/xiuxian.v1.AuthService/RotateMCPKey"
+
+type AuthServiceHTTPServer interface {
+	Login(context.Context, *LoginRequest) (*AuthResponse, error)
+	Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error)
+	Register(context.Context, *RegisterRequest) (*AuthResponse, error)
+	RevokeMCPKey(context.Context, *RevokeMCPKeyRequest) (*emptypb.Empty, error)
+	RotateMCPKey(context.Context, *RotateMCPKeyRequest) (*RotateMCPKeyResponse, error)
+}
+
+func RegisterAuthServiceHTTPServer(s *http.Server, srv AuthServiceHTTPServer) {
+	r := s.Route("/")
+	r.POST("/registrations", _AuthService_Register0_HTTP_Handler(srv))
+	r.POST("/sessions", _AuthService_Login0_HTTP_Handler(srv))
+	r.DELETE("/session", _AuthService_Logout0_HTTP_Handler(srv))
+	r.POST("/mcp-key-rotations", _AuthService_RotateMCPKey0_HTTP_Handler(srv))
+	r.DELETE("/mcp-key", _AuthService_RevokeMCPKey0_HTTP_Handler(srv))
+}
+
+func _AuthService_Register0_HTTP_Handler(srv AuthServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in RegisterRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationAuthServiceRegister)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Register(ctx, req.(*RegisterRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*AuthResponse)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _AuthService_Login0_HTTP_Handler(srv AuthServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in LoginRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationAuthServiceLogin)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Login(ctx, req.(*LoginRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*AuthResponse)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _AuthService_Logout0_HTTP_Handler(srv AuthServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in LogoutRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationAuthServiceLogout)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Logout(ctx, req.(*LogoutRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*emptypb.Empty)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _AuthService_RotateMCPKey0_HTTP_Handler(srv AuthServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in RotateMCPKeyRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationAuthServiceRotateMCPKey)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.RotateMCPKey(ctx, req.(*RotateMCPKeyRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*RotateMCPKeyResponse)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _AuthService_RevokeMCPKey0_HTTP_Handler(srv AuthServiceHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in RevokeMCPKeyRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationAuthServiceRevokeMCPKey)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.RevokeMCPKey(ctx, req.(*RevokeMCPKeyRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*emptypb.Empty)
+		return ctx.Result(200, reply)
+	}
+}
+
+type AuthServiceHTTPClient interface {
+	Login(ctx context.Context, req *LoginRequest, opts ...http.CallOption) (rsp *AuthResponse, err error)
+	Logout(ctx context.Context, req *LogoutRequest, opts ...http.CallOption) (rsp *emptypb.Empty, err error)
+	Register(ctx context.Context, req *RegisterRequest, opts ...http.CallOption) (rsp *AuthResponse, err error)
+	RevokeMCPKey(ctx context.Context, req *RevokeMCPKeyRequest, opts ...http.CallOption) (rsp *emptypb.Empty, err error)
+	RotateMCPKey(ctx context.Context, req *RotateMCPKeyRequest, opts ...http.CallOption) (rsp *RotateMCPKeyResponse, err error)
+}
+
+type AuthServiceHTTPClientImpl struct {
+	cc *http.Client
+}
+
+func NewAuthServiceHTTPClient(client *http.Client) AuthServiceHTTPClient {
+	return &AuthServiceHTTPClientImpl{client}
+}
+
+func (c *AuthServiceHTTPClientImpl) Login(ctx context.Context, in *LoginRequest, opts ...http.CallOption) (*AuthResponse, error) {
+	var out AuthResponse
+	pattern := "/sessions"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationAuthServiceLogin))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *AuthServiceHTTPClientImpl) Logout(ctx context.Context, in *LogoutRequest, opts ...http.CallOption) (*emptypb.Empty, error) {
+	var out emptypb.Empty
+	pattern := "/session"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationAuthServiceLogout))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *AuthServiceHTTPClientImpl) Register(ctx context.Context, in *RegisterRequest, opts ...http.CallOption) (*AuthResponse, error) {
+	var out AuthResponse
+	pattern := "/registrations"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationAuthServiceRegister))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *AuthServiceHTTPClientImpl) RevokeMCPKey(ctx context.Context, in *RevokeMCPKeyRequest, opts ...http.CallOption) (*emptypb.Empty, error) {
+	var out emptypb.Empty
+	pattern := "/mcp-key"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationAuthServiceRevokeMCPKey))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *AuthServiceHTTPClientImpl) RotateMCPKey(ctx context.Context, in *RotateMCPKeyRequest, opts ...http.CallOption) (*RotateMCPKeyResponse, error) {
+	var out RotateMCPKeyResponse
+	pattern := "/mcp-key-rotations"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationAuthServiceRotateMCPKey))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

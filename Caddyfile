@@ -1,13 +1,28 @@
 http://localhost, https://localhost {
     encode zstd gzip
 
-    handle /api/* {
+    handle /healthz {
         reverse_proxy game-server:8080 {
             flush_interval -1
         }
     }
 
-    handle /xiuxian.v1.WorldService/* {
+    handle /events/stream {
+        reverse_proxy game-server:8080 {
+            flush_interval -1
+        }
+    }
+
+    handle /api/v1/* {
+        respond 404
+    }
+
+    handle /internal/* {
+        reverse_proxy game-server:8080
+    }
+
+    @game_api path /state /world/bounds /scans /movements /movement-stops /cultivation-transfers /cultivation-seizures /reincarnations /events /conversations /conversation-responses /conversation-messages /conversation-closures /registrations /sessions /session /mcp-key-rotations /mcp-key
+    handle @game_api {
         reverse_proxy game-server:8080
     }
 

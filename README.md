@@ -61,9 +61,11 @@ scripts/check.sh
 
 Protobuf 契约位于 `api/proto/xiuxian/v1/world.proto`，Buf 配置位于仓库根目录。规则引擎使用毫秒修为单位（自然经过 1 毫秒即增加 1 内部修为单位，60,000 单位为 1 点修为）；坐标使用千分之一世界单位，避免夺功和机缘发现依赖浮点相等。
 
+世界以最小非退化边界 `x ∈ [0, 0.001]`、`y = 0` 启动，保证原点死亡产生的机缘能立即放置到非死亡坐标；此后边界仍只会由角色实际到达的新极值单调扩展。
+
 后端按 Kratos 分层组织：
 
-- `internal/service`：Proto 生成接口与兼容 HTTP/SSE 的传输适配
+- `internal/service`：Proto 生成接口与 Health/SSE 辅助传输适配
 - `internal/biz`：上下文感知的世界用例和仓储接口
 - `internal/data`：PostgreSQL / 内存仓储实现
 - `internal/server`：Kratos HTTP、gRPC、中间件和路由装配
@@ -89,8 +91,7 @@ POST https://localhost/mcp
 ## 测试接缝
 
 - `internal/rules`：纯规则 worked examples，包括突破/寿尽同毫秒、动态速度、传功边界、组合感应半径和机缘转化。
-- `internal/api`：公开 HTTP 黑盒场景，包括并发重名、会话、移动、扫描、传功/夺功、死亡/转世、机缘、MCP Key 和 authority 重启恢复。
-- `internal/server`：Kratos 生成路由与兼容 REST 路由共同运行的传输测试。
+- `internal/server`：公开 HTTP 黑盒场景、Kratos 生成资源路由、Health/SSE 辅助路由，以及旧 `/api/v1/*` 返回 404 的传输测试。
 - `cmd/mcp-gateway`：MCP 工具发现与 authority 代理行为。
 
 完整 Compose 冒烟应确认 `world_snapshots` 存在一行，并且 `outbox` 行最终被 Worker 标记完成。

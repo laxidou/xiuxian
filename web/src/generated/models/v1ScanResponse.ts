@@ -8,5 +8,7 @@ export type v1ScanResponse = {
     roles?: Array<v1ScanRole>;
     opportunities?: Array<v1OpportunitySignal>;
     hasMore?: boolean;
+    truncatedRoles?: number;
+    truncatedOpportunities?: number;
 };
 

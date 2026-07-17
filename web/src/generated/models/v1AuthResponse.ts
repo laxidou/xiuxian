@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type v1GetStateRequest = {
+import type { v1RoleState } from './v1RoleState';
+export type v1AuthResponse = {
+    state?: v1RoleState;
 };
 

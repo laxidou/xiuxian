@@ -8,7 +8,7 @@ import (
 
 var ProviderSet = wire.NewSet(
 	conf.ProvideServer,
-	NewLegacyHTTPHandler,
+	NewAuxiliaryHTTPHandler,
 	NewHTTPServer,
 	NewGRPCServer,
 )

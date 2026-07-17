@@ -2,16 +2,15 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
-	"log"
+	stdlog "log"
 	"math"
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
+	kratoslog "github.com/go-kratos/kratos/v2/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
@@ -20,6 +19,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	worldv1 "xiuxian/gen/go/xiuxian/v1"
+	"xiuxian/internal/biz"
+	"xiuxian/internal/data"
 )
 
 type rpcRequest struct {
@@ -41,17 +42,7 @@ type tool struct {
 type gateway struct {
 	rpc    worldv1.WorldServiceClient
 	health grpc_health_v1.HealthClient
-	limits *roleLimiter
-}
-
-type roleLimiter struct {
-	mu      sync.Mutex
-	buckets map[[sha256.Size]byte]tokenBucket
-}
-
-type tokenBucket struct {
-	tokens float64
-	last   time.Time
+	limits biz.RateLimiter
 }
 
 func main() {
@@ -65,19 +56,34 @@ func main() {
 	}
 	connection, err := grpc.NewClient(grpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatal(err)
+		stdlog.Fatal(err)
 	}
 	defer connection.Close()
+	limitContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	limiter, cleanupLimiter, err := data.OpenRedisRateLimiter(
+		limitContext,
+		os.Getenv("REDIS_URL"),
+		kratoslog.NewStdLogger(os.Stdout),
+	)
+	cancel()
+	if err != nil {
+		stdlog.Fatal(err)
+	}
+	defer cleanupLimiter()
 	server := &http.Server{
-		Addr: address, Handler: newRPCGateway(worldv1.NewWorldServiceClient(connection), grpc_health_v1.NewHealthClient(connection)),
+		Addr: address, Handler: newRPCGatewayWithLimiter(worldv1.NewWorldServiceClient(connection), limiter, grpc_health_v1.NewHealthClient(connection)),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second,
 	}
-	log.Printf("mcp-gateway listening on %s", address)
-	log.Fatal(server.ListenAndServe())
+	stdlog.Printf("mcp-gateway listening on %s", address)
+	stdlog.Fatal(server.ListenAndServe())
 }
 
 func newRPCGateway(client worldv1.WorldServiceClient, healthClients ...grpc_health_v1.HealthClient) http.Handler {
-	result := &gateway{rpc: client, limits: &roleLimiter{buckets: make(map[[sha256.Size]byte]tokenBucket)}}
+	return newRPCGatewayWithLimiter(client, data.NewMemoryRateLimiter(), healthClients...)
+}
+
+func newRPCGatewayWithLimiter(client worldv1.WorldServiceClient, limiter biz.RateLimiter, healthClients ...grpc_health_v1.HealthClient) http.Handler {
+	result := &gateway{rpc: client, limits: limiter}
 	if len(healthClients) > 0 {
 		result.health = healthClients[0]
 	}
@@ -126,40 +132,25 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "tools/list":
 		writeRPCResult(w, request.ID, map[string]any{"tools": tools()})
 	case "tools/call":
-		if !g.limits.Allow(authorization, time.Now()) {
+		allowed, err := g.limits.Allow(r.Context(), "mcp_tool", authorization, biz.MCPToolRateLimit)
+		if err != nil {
+			writeRPCError(w, request.ID, -32004, "role call budget unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if !allowed {
 			writeRPCError(w, request.ID, -32003, "role call budget exceeded", http.StatusTooManyRequests)
 			return
 		}
-		g.callToolRPC(w, request, authorization)
+		g.callToolRPC(r.Context(), w, request, authorization)
 	default:
 		writeRPCError(w, request.ID, -32601, "method not found", http.StatusOK)
 	}
 }
 
-func (l *roleLimiter) Allow(authorization string, now time.Time) bool {
-	key := sha256.Sum256([]byte(authorization))
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	bucket, ok := l.buckets[key]
-	if !ok {
-		bucket = tokenBucket{tokens: 5, last: now}
-	}
-	elapsed := now.Sub(bucket.last).Seconds()
-	if elapsed > 0 {
-		bucket.tokens = math.Min(5, bucket.tokens+elapsed)
-		bucket.last = now
-	}
-	if bucket.tokens < 1 {
-		l.buckets[key] = bucket
-		return false
-	}
-	bucket.tokens--
-	l.buckets[key] = bucket
-	return true
-}
-
-func (g *gateway) callToolRPC(w http.ResponseWriter, request rpcRequest, authorization string) {
-	ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", authorization)
+func (g *gateway) callToolRPC(ctx context.Context, w http.ResponseWriter, request rpcRequest, authorization string) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", authorization)
 	key, _ := request.Params.Arguments["idempotency_key"].(string)
 	if key == "" {
 		key = "mcp-" + strings.Trim(string(request.ID), `"`)

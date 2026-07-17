@@ -6,11 +6,7 @@ import type { rpcStatus } from '../models/rpcStatus';
 import type { v1CloseConversationRequest } from '../models/v1CloseConversationRequest';
 import type { v1Conversation } from '../models/v1Conversation';
 import type { v1ConversationMessage } from '../models/v1ConversationMessage';
-import type { v1GetStateRequest } from '../models/v1GetStateRequest';
-import type { v1GetWorldBoundsRequest } from '../models/v1GetWorldBoundsRequest';
-import type { v1ListConversationsRequest } from '../models/v1ListConversationsRequest';
 import type { v1ListConversationsResponse } from '../models/v1ListConversationsResponse';
-import type { v1ListRecentEventsRequest } from '../models/v1ListRecentEventsRequest';
 import type { v1ListRecentEventsResponse } from '../models/v1ListRecentEventsResponse';
 import type { v1MoveRequest } from '../models/v1MoveRequest';
 import type { v1ReincarnateRequest } from '../models/v1ReincarnateRequest';
@@ -39,157 +35,7 @@ export class WorldServiceService {
     ): CancelablePromise<v1Conversation | rpcStatus> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/xiuxian.v1.WorldService/CloseConversation',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1RoleState A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceGetState(
-        body: v1GetStateRequest,
-    ): CancelablePromise<v1RoleState | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/GetState',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1WorldBounds A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceGetWorldBounds(
-        body: v1GetWorldBoundsRequest,
-    ): CancelablePromise<v1WorldBounds | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/GetWorldBounds',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1ListConversationsResponse A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceListConversations(
-        body: v1ListConversationsRequest,
-    ): CancelablePromise<v1ListConversationsResponse | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/ListConversations',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1ListRecentEventsResponse A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceListRecentEvents(
-        body: v1ListRecentEventsRequest,
-    ): CancelablePromise<v1ListRecentEventsResponse | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/ListRecentEvents',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1RoleState A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceMove(
-        body: v1MoveRequest,
-    ): CancelablePromise<v1RoleState | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/Move',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1RoleState A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceReincarnate(
-        body: v1ReincarnateRequest,
-    ): CancelablePromise<v1RoleState | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/Reincarnate',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1Conversation A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceRequestConversation(
-        body: v1RequestConversationRequest,
-    ): CancelablePromise<v1Conversation | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/RequestConversation',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1Conversation A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceRespondConversation(
-        body: v1RespondConversationRequest,
-    ): CancelablePromise<v1Conversation | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/RespondConversation',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1ScanResponse A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceScan(
-        body: v1ScanRequest,
-    ): CancelablePromise<v1ScanResponse | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/Scan',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1RoleState A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceSeizeCultivation(
-        body: v1SeizeCultivationRequest,
-    ): CancelablePromise<v1RoleState | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/xiuxian.v1.WorldService/SeizeCultivation',
+            url: '/conversation-closures',
             body: body,
         });
     }
@@ -204,7 +50,48 @@ export class WorldServiceService {
     ): CancelablePromise<v1ConversationMessage | rpcStatus> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/xiuxian.v1.WorldService/SendConversationMessage',
+            url: '/conversation-messages',
+            body: body,
+        });
+    }
+    /**
+     * @param body
+     * @returns v1Conversation A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceRespondConversation(
+        body: v1RespondConversationRequest,
+    ): CancelablePromise<v1Conversation | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/conversation-responses',
+            body: body,
+        });
+    }
+    /**
+     * @returns v1ListConversationsResponse A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceListConversations(): CancelablePromise<v1ListConversationsResponse | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/conversations',
+        });
+    }
+    /**
+     * @param body
+     * @returns v1Conversation A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceRequestConversation(
+        body: v1RequestConversationRequest,
+    ): CancelablePromise<v1Conversation | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/conversations',
             body: body,
         });
     }
@@ -214,12 +101,12 @@ export class WorldServiceService {
      * @returns rpcStatus An unexpected error response.
      * @throws ApiError
      */
-    public static worldServiceStop(
-        body: v1StopRequest,
+    public static worldServiceSeizeCultivation(
+        body: v1SeizeCultivationRequest,
     ): CancelablePromise<v1RoleState | rpcStatus> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/xiuxian.v1.WorldService/Stop',
+            url: '/cultivation-seizures',
             body: body,
         });
     }
@@ -234,8 +121,110 @@ export class WorldServiceService {
     ): CancelablePromise<v1RoleState | rpcStatus> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/xiuxian.v1.WorldService/TransferCultivation',
+            url: '/cultivation-transfers',
             body: body,
+        });
+    }
+    /**
+     * @param after
+     * @param limit
+     * @returns v1ListRecentEventsResponse A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceListRecentEvents(
+        after?: string,
+        limit?: number,
+    ): CancelablePromise<v1ListRecentEventsResponse | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/events',
+            query: {
+                'after': after,
+                'limit': limit,
+            },
+        });
+    }
+    /**
+     * @param body
+     * @returns v1RoleState A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceStop(
+        body: v1StopRequest,
+    ): CancelablePromise<v1RoleState | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/movement-stops',
+            body: body,
+        });
+    }
+    /**
+     * @param body
+     * @returns v1RoleState A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceMove(
+        body: v1MoveRequest,
+    ): CancelablePromise<v1RoleState | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/movements',
+            body: body,
+        });
+    }
+    /**
+     * @param body
+     * @returns v1RoleState A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceReincarnate(
+        body: v1ReincarnateRequest,
+    ): CancelablePromise<v1RoleState | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/reincarnations',
+            body: body,
+        });
+    }
+    /**
+     * @param body
+     * @returns v1ScanResponse A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceScan(
+        body: v1ScanRequest,
+    ): CancelablePromise<v1ScanResponse | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/scans',
+            body: body,
+        });
+    }
+    /**
+     * @returns v1RoleState A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceGetState(): CancelablePromise<v1RoleState | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/state',
+        });
+    }
+    /**
+     * @returns v1WorldBounds A successful response.
+     * @returns rpcStatus An unexpected error response.
+     * @throws ApiError
+     */
+    public static worldServiceGetWorldBounds(): CancelablePromise<v1WorldBounds | rpcStatus> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/world/bounds',
         });
     }
 }
