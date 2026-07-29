@@ -6,3 +6,14 @@ web/vite.config.js
 web/vite.config.d.ts
 .env
 coverage.out
+
+# Local tooling, specs, and scratch — not for the shared repo
+.agents/
+.claude/
+.issues/
+.kiro/
+.prototypes/
+.scratch/
+.vscode/
+.wayfinder/
+skills-lock.json
