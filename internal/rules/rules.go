@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	Version                  = int32(2)
+	Version                  = int32(3)
 	cultivationUnitsPerPoint = int64(time.Minute / time.Millisecond)
 	coordinateScale          = int64(1000)
 	opportunityDuration      = 24 * time.Hour
+	SeizureRange             = 1.0
 )
 
 type Cultivation int64
@@ -37,6 +38,24 @@ func (c Coordinate) Units() float64 {
 	return float64(c) / float64(coordinateScale)
 }
 
+func IntegerGridRange(minimum, maximum Coordinate) (Coordinate, Coordinate, int64) {
+	if minimum > maximum {
+		return 0, 0, 0
+	}
+	firstUnits := int64(minimum) / coordinateScale
+	if int64(minimum)%coordinateScale > 0 {
+		firstUnits++
+	}
+	lastUnits := int64(maximum) / coordinateScale
+	if int64(maximum)%coordinateScale < 0 {
+		lastUnits--
+	}
+	if firstUnits > lastUnits {
+		return 0, 0, 0
+	}
+	return Coordinate(firstUnits * coordinateScale), Coordinate(lastUnits * coordinateScale), lastUnits - firstUnits + 1
+}
+
 type Position struct {
 	X Coordinate `json:"x"`
 	Y Coordinate `json:"y"`
@@ -49,6 +68,20 @@ type Realm struct {
 	Lifespan    time.Duration
 	Speed       int64
 	SenseRadius int64
+}
+
+type InteractionEligibility struct {
+	CanTransfer            bool
+	CanSeize               bool
+	CanRequestConversation bool
+}
+
+func InteractionEligibilityFor(distance float64, actor, target Realm) InteractionEligibility {
+	return InteractionEligibility{
+		CanTransfer:            distance <= float64(actor.Speed),
+		CanSeize:               distance <= SeizureRange && actor.Level > target.Level,
+		CanRequestConversation: distance <= float64(actor.SenseRadius),
+	}
 }
 
 var realms = func() []Realm {

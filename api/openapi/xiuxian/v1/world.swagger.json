@@ -1163,6 +1163,15 @@
         },
         "position": {
           "$ref": "#/definitions/v1Position"
+        },
+        "canTransfer": {
+          "type": "boolean"
+        },
+        "canSeize": {
+          "type": "boolean"
+        },
+        "canRequestConversation": {
+          "type": "boolean"
         }
       }
     },

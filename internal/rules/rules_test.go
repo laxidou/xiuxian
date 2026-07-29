@@ -75,6 +75,26 @@ func TestTransferRejectsOnlyWhenPostTransferLifespanIsBelowAge(t *testing.T) {
 	}
 }
 
+func TestInteractionEligibilityUsesPublishedInclusiveRanges(t *testing.T) {
+	attacker := rules.RealmFor(rules.Points(5))
+	target := rules.RealmFor(0)
+
+	atBoundary := rules.InteractionEligibilityFor(1, attacker, target)
+	if !atBoundary.CanTransfer || !atBoundary.CanSeize || !atBoundary.CanRequestConversation {
+		t.Fatalf("eligibility at distance 1 = %+v, want all interactions allowed", atBoundary)
+	}
+
+	beyondSeizure := rules.InteractionEligibilityFor(1.001, attacker, target)
+	if !beyondSeizure.CanTransfer || beyondSeizure.CanSeize || !beyondSeizure.CanRequestConversation {
+		t.Fatalf("eligibility at distance 1.001 = %+v, want only seizure forbidden", beyondSeizure)
+	}
+
+	equalRealm := rules.InteractionEligibilityFor(0, target, target)
+	if equalRealm.CanSeize {
+		t.Fatalf("equal-realm seizure eligibility = %+v, want forbidden", equalRealm)
+	}
+}
+
 func TestTrajectoryUsesCanonicalCoordinatesAndReachesExactTarget(t *testing.T) {
 	trajectory := rules.Trajectory{
 		Start:     rules.Position{X: rules.Units(0), Y: rules.Units(0)},
@@ -141,6 +161,18 @@ func TestOpportunitySenseUsesCombinedRadius(t *testing.T) {
 	opportunity := rules.Position{X: rules.Units(8), Y: rules.Units(0)}
 	if !rules.CanSenseOpportunity(role, rules.Units(5), opportunity, rules.Units(3)) {
 		t.Fatal("touching sense circles should count as 感应到机缘")
+	}
+}
+
+func TestIntegerGridRangeStaysInsideFractionalAndNegativeBounds(t *testing.T) {
+	first, last, count := rules.IntegerGridRange(rules.Units(-1.2), rules.Units(1.2))
+	if first != rules.Units(-1) || last != rules.Units(1) || count != 3 {
+		t.Fatalf("integer grid range = (%v, %v, %d), want (-1, 1, 3)", first.Units(), last.Units(), count)
+	}
+
+	first, last, count = rules.IntegerGridRange(rules.Units(0.001), rules.Units(0.999))
+	if count != 0 || first != 0 || last != 0 {
+		t.Fatalf("empty fractional range = (%v, %v, %d), want empty", first.Units(), last.Units(), count)
 	}
 }
 

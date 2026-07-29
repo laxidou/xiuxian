@@ -167,6 +167,9 @@ message ScanRole {
   string status = 4;
   double distance = 5;
   optional Position position = 6;
+  bool can_transfer = 7;
+  bool can_seize = 8;
+  bool can_request_conversation = 9;
 }
 
 message OpportunitySignal {

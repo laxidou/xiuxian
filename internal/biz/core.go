@@ -19,15 +19,16 @@ import (
 )
 
 var (
-	ErrConflict        = errors.New("resource already exists")
-	ErrInvalid         = errors.New("invalid request")
-	ErrUnauthenticated = errors.New("authentication required")
-	ErrNotAlive        = errors.New("role is not alive")
-	ErrIdempotencyKey  = errors.New("idempotency key is required")
-	ErrNotFound        = errors.New("resource not found")
-	ErrForbidden       = errors.New("action is not allowed")
-	ErrRateLimited     = errors.New("rate limit exceeded")
-	ErrStaleCommand    = errors.New("command expectation is stale")
+	ErrConflict         = errors.New("resource already exists")
+	ErrInvalid          = errors.New("invalid request")
+	ErrUnauthenticated  = errors.New("authentication required")
+	ErrNotAlive         = errors.New("role is not alive")
+	ErrIdempotencyKey   = errors.New("idempotency key is required")
+	ErrNotFound         = errors.New("resource not found")
+	ErrForbidden        = errors.New("action is not allowed")
+	ErrTargetIneligible = errors.New("target is out of range or no longer eligible")
+	ErrRateLimited      = errors.New("rate limit exceeded")
+	ErrStaleCommand     = errors.New("command expectation is stale")
 )
 
 type CommandExpectation struct {
@@ -182,17 +183,21 @@ type Opportunity struct {
 	Status        OpportunityStatus
 	BoundRoleID   string
 	BoundAt       time.Time
+	AvailableAt   time.Time
 	Credited      rules.Cultivation
 	DeathPosition rules.Position
 }
 
 type ScanRole struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Realm    string          `json:"realm"`
-	Status   RoleStatus      `json:"status"`
-	Distance float64         `json:"distance"`
-	Position *PublicPosition `json:"position,omitempty"`
+	ID                     string          `json:"id"`
+	Name                   string          `json:"name"`
+	Realm                  string          `json:"realm"`
+	Status                 RoleStatus      `json:"status"`
+	Distance               float64         `json:"distance"`
+	Position               *PublicPosition `json:"position,omitempty"`
+	CanTransfer            bool            `json:"can_transfer"`
+	CanSeize               bool            `json:"can_seize"`
+	CanRequestConversation bool            `json:"can_request_conversation"`
 }
 
 type OpportunitySignal struct {
@@ -256,7 +261,7 @@ type authorityTimeStore interface {
 	AuthorityNow(context.Context) (time.Time, error)
 }
 
-const initialWorldMaxX rules.Coordinate = 1
+const initialWorldMaxX rules.Coordinate = 1000
 
 func NewService(clock Clock) *Service {
 	if clock == nil {
@@ -625,7 +630,11 @@ func (s *Service) Scan(ctx context.Context, roleID string, expectation CommandEx
 		if distance > float64(scannerState.SenseRadius) {
 			continue
 		}
-		entry := ScanRole{ID: target.ID, Name: target.Name, Realm: targetState.Realm, Status: targetState.Status, Distance: distance}
+		eligibility := interactionEligibilityForStates(scannerState, targetState)
+		entry := ScanRole{
+			ID: target.ID, Name: target.Name, Realm: targetState.Realm, Status: targetState.Status, Distance: distance,
+			CanTransfer: eligibility.CanTransfer, CanSeize: eligibility.CanSeize, CanRequestConversation: eligibility.CanRequestConversation,
+		}
 		position := targetState.Position
 		entry.Position = &position
 		if scannerState.RealmLevel > targetState.RealmLevel {
@@ -691,11 +700,14 @@ func (s *Service) Transfer(ctx context.Context, roleID, targetID, idempotencyKey
 	now := s.authoritativeNowLocked(ctx, sender)
 	senderState := s.stateLocked(sender, now)
 	receiverState := s.stateLocked(receiver, now)
-	if sender.Status != RoleAlive || receiver.Status != RoleAlive {
+	if sender.Status != RoleAlive {
 		return State{}, ErrNotAlive
 	}
-	if distanceOfStates(senderState, receiverState) > float64(senderState.Speed) {
-		return State{}, ErrForbidden
+	if receiver.Status != RoleAlive {
+		return State{}, ErrTargetIneligible
+	}
+	if !interactionEligibilityForStates(senderState, receiverState).CanTransfer {
+		return State{}, ErrTargetIneligible
 	}
 	s.settleOpportunityLocked(sender, now)
 	s.settleOpportunityLocked(receiver, now)
@@ -753,11 +765,14 @@ func (s *Service) Seize(ctx context.Context, roleID, targetID, idempotencyKey st
 	now := s.authoritativeNowLocked(ctx, attacker)
 	attackerState := s.stateLocked(attacker, now)
 	targetState := s.stateLocked(target, now)
-	if attacker.Status != RoleAlive || target.Status != RoleAlive {
+	if attacker.Status != RoleAlive {
 		return State{}, ErrNotAlive
 	}
-	if attackerState.RealmLevel <= targetState.RealmLevel || attackerState.Position != targetState.Position {
-		return State{}, ErrForbidden
+	if target.Status != RoleAlive {
+		return State{}, ErrTargetIneligible
+	}
+	if !interactionEligibilityForStates(attackerState, targetState).CanSeize {
+		return State{}, ErrTargetIneligible
 	}
 	s.settleOpportunityLocked(attacker, now)
 	s.settleOpportunityLocked(target, now)
@@ -802,11 +817,14 @@ func (s *Service) RequestConversation(ctx context.Context, roleID, targetID, ide
 	now := s.authoritativeNowLocked(ctx, requester)
 	requesterState := s.stateLocked(requester, now)
 	recipientState := s.stateLocked(recipient, now)
-	if requester.Status != RoleAlive || recipient.Status != RoleAlive {
+	if requester.Status != RoleAlive {
 		return Conversation{}, ErrNotAlive
 	}
-	if distanceOfStates(requesterState, recipientState) > float64(requesterState.SenseRadius) {
-		return Conversation{}, ErrForbidden
+	if recipient.Status != RoleAlive {
+		return Conversation{}, ErrTargetIneligible
+	}
+	if !interactionEligibilityForStates(requesterState, recipientState).CanRequestConversation {
+		return Conversation{}, ErrTargetIneligible
 	}
 	s.nextID++
 	id := fmt.Sprintf("conversation_%d", s.nextID)
@@ -1107,6 +1125,7 @@ func (s *Service) cultivationLocked(role *Role, now time.Time) rules.Cultivation
 }
 
 func (s *Service) stateLocked(role *Role, now time.Time) State {
+	s.settleWorldTrajectoryOpportunityIntersectionsLocked(now)
 	cultivation := s.cultivationLocked(role, now)
 	age := now.Sub(role.LifeStartedAt)
 	if age < 0 {
@@ -1221,15 +1240,149 @@ func (s *Service) claimOpportunityLocked(role *Role, position rules.Position, no
 		if opportunity.Status != OpportunityUnclaimed || opportunity.Position != position {
 			continue
 		}
-		opportunity.Status = OpportunityBound
-		opportunity.BoundRoleID = role.ID
-		opportunity.BoundAt = now
-		role.BoundOpportunityID = id
-		role.StateVersion++
-		s.appendEventLocked(role, now, "opportunity_claimed", "觅得机缘", map[string]any{"opportunity_id": id})
-		s.appendEventLocked(role, now, "opportunity_converting", "参悟机缘", map[string]any{"opportunity_id": id})
+		s.bindOpportunityLocked(role, opportunity, now)
 		return
 	}
+}
+
+type opportunityCrossing struct {
+	role        *Role
+	opportunity *Opportunity
+	at          time.Time
+}
+
+func (s *Service) settleWorldTrajectoryOpportunityIntersectionsLocked(now time.Time) {
+	crossings := make([]opportunityCrossing, 0)
+	for _, role := range s.roles {
+		if role.Status != RoleAlive || role.Trajectory == nil || role.BoundOpportunityID != "" {
+			continue
+		}
+		trajectory := *role.Trajectory
+		from := role.LastSettledAt
+		if from.Before(trajectory.StartedAt) {
+			from = trajectory.StartedAt
+		}
+		to := now
+		if !role.NextDeathAt.IsZero() && role.NextDeathAt.Before(to) {
+			to = role.NextDeathAt
+		}
+		if !to.After(from) {
+			continue
+		}
+		for _, opportunity := range s.opportunities {
+			if opportunity.Status != OpportunityUnclaimed {
+				continue
+			}
+			distance, ok := trajectoryDistanceToPosition(trajectory, opportunity.Position)
+			if !ok {
+				continue
+			}
+			crossedAt, ok := trajectoryTimeAtDistance(trajectory, role.TrajectoryCultivation, distance, to)
+			if !ok || !crossedAt.After(from) || crossedAt.After(to) || (!opportunity.AvailableAt.IsZero() && crossedAt.Before(opportunity.AvailableAt)) {
+				continue
+			}
+			crossings = append(crossings, opportunityCrossing{role: role, opportunity: opportunity, at: crossedAt})
+		}
+	}
+
+	sort.Slice(crossings, func(i, j int) bool {
+		if !crossings[i].at.Equal(crossings[j].at) {
+			return crossings[i].at.Before(crossings[j].at)
+		}
+		if crossings[i].opportunity.ID != crossings[j].opportunity.ID {
+			return crossings[i].opportunity.ID < crossings[j].opportunity.ID
+		}
+		return crossings[i].role.ID < crossings[j].role.ID
+	})
+	for _, crossing := range crossings {
+		if crossing.role.Status != RoleAlive || crossing.role.BoundOpportunityID != "" || crossing.opportunity.Status != OpportunityUnclaimed {
+			continue
+		}
+		s.bindOpportunityLocked(crossing.role, crossing.opportunity, crossing.at)
+	}
+}
+
+func (s *Service) bindOpportunityLocked(role *Role, opportunity *Opportunity, at time.Time) {
+	if role.BoundOpportunityID != "" || opportunity == nil || opportunity.Status != OpportunityUnclaimed {
+		return
+	}
+	opportunity.Status = OpportunityBound
+	opportunity.BoundRoleID = role.ID
+	opportunity.BoundAt = at
+	role.BoundOpportunityID = opportunity.ID
+	role.StateVersion++
+	s.appendEventLocked(role, at, "opportunity_claimed", "觅得机缘", map[string]any{"opportunity_id": opportunity.ID})
+	s.appendEventLocked(role, at, "opportunity_converting", "参悟机缘", map[string]any{"opportunity_id": opportunity.ID})
+}
+
+func trajectoryDistanceToPosition(trajectory rules.Trajectory, position rules.Position) (float64, bool) {
+	start := trajectory.Start
+	if trajectory.ModeOrTarget() == rules.TrajectoryDirection {
+		switch trajectory.Direction {
+		case rules.DirectionUp:
+			if position.X != start.X || position.Y < start.Y {
+				return 0, false
+			}
+		case rules.DirectionDown:
+			if position.X != start.X || position.Y > start.Y {
+				return 0, false
+			}
+		case rules.DirectionLeft:
+			if position.Y != start.Y || position.X > start.X {
+				return 0, false
+			}
+		case rules.DirectionRight:
+			if position.Y != start.Y || position.X < start.X {
+				return 0, false
+			}
+		default:
+			return 0, false
+		}
+		return rules.Distance(start, position), true
+	}
+
+	target := trajectory.Target
+	dx := big.NewInt(int64(target.X - start.X))
+	dy := big.NewInt(int64(target.Y - start.Y))
+	px := big.NewInt(int64(position.X - start.X))
+	py := big.NewInt(int64(position.Y - start.Y))
+	left := new(big.Int).Mul(dx, py)
+	right := new(big.Int).Mul(dy, px)
+	if left.Cmp(right) != 0 || position.X < minCoordinate(start.X, target.X) || position.X > maxCoordinate(start.X, target.X) || position.Y < minCoordinate(start.Y, target.Y) || position.Y > maxCoordinate(start.Y, target.Y) {
+		return 0, false
+	}
+	return rules.Distance(start, position), true
+}
+
+func trajectoryTimeAtDistance(trajectory rules.Trajectory, cultivation rules.Cultivation, distance float64, noLaterThan time.Time) (time.Time, bool) {
+	maxMillis := noLaterThan.Sub(trajectory.StartedAt).Milliseconds()
+	if maxMillis < 0 || rules.TravelDistance(cultivation, time.Duration(maxMillis)*time.Millisecond, trajectory.DesiredSpeed) < distance {
+		return time.Time{}, false
+	}
+	low, high := int64(0), maxMillis
+	for low < high {
+		mid := low + (high-low)/2
+		if rules.TravelDistance(cultivation, time.Duration(mid)*time.Millisecond, trajectory.DesiredSpeed) >= distance {
+			high = mid
+		} else {
+			low = mid + 1
+		}
+	}
+	return trajectory.StartedAt.Add(time.Duration(low) * time.Millisecond), true
+}
+
+func minCoordinate(a, b rules.Coordinate) rules.Coordinate {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxCoordinate(a, b rules.Coordinate) rules.Coordinate {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (s *Service) settleOpportunityLocked(role *Role, now time.Time) {
@@ -1276,7 +1429,7 @@ func (s *Service) killLocked(role *Role, at time.Time, cultivation rules.Cultiva
 		radius := rules.RealmFor(cultivation).SenseRadius
 		opportunity := &Opportunity{
 			ID: opportunityID, Position: position, DeathPosition: position, Level: level,
-			Cultivation: cultivation, SenseRadius: rules.Units(float64(radius)), Status: OpportunityUnplaced,
+			Cultivation: cultivation, SenseRadius: rules.Units(float64(radius)), Status: OpportunityUnplaced, AvailableAt: at,
 		}
 		s.opportunities[opportunityID] = opportunity
 		s.placeOpportunityLocked(opportunity)
@@ -1352,7 +1505,7 @@ func (s *Service) placeOpportunityLocked(opportunity *Opportunity) {
 	if opportunity == nil || opportunity.Status != OpportunityUnplaced {
 		return
 	}
-	position, ok := randomPositionExcluding(s.minX, s.maxX, s.minY, s.maxY, opportunity.DeathPosition)
+	position, ok := randomIntegerPositionExcluding(s.minX, s.maxX, s.minY, s.maxY, opportunity.DeathPosition)
 	if !ok {
 		return
 	}
@@ -1366,6 +1519,14 @@ func positionOfState(state State) rules.Position {
 
 func distanceOfStates(a, b State) float64 {
 	return rules.Distance(positionOfState(a), positionOfState(b))
+}
+
+func interactionEligibilityForStates(actor, target State) rules.InteractionEligibility {
+	return rules.InteractionEligibilityFor(
+		distanceOfStates(actor, target),
+		rules.RealmFor(rules.Points(actor.Cultivation)),
+		rules.RealmFor(rules.Points(target.Cultivation)),
+	)
 }
 
 func (s *Service) rebaseTrajectoryLocked(role *Role, position rules.Position, now time.Time, cultivation rules.Cultivation) {
@@ -1484,25 +1645,38 @@ func randomCoordinate(minimum, maximum rules.Coordinate) (rules.Coordinate, erro
 	return minimum + rules.Coordinate(value.Int64()), nil
 }
 
-func randomPositionExcluding(minX, maxX, minY, maxY rules.Coordinate, excluded rules.Position) (rules.Position, bool) {
-	if minX == maxX && minY == maxY {
+func randomIntegerPositionExcluding(minX, maxX, minY, maxY rules.Coordinate, excluded rules.Position) (rules.Position, bool) {
+	firstX, _, countX := rules.IntegerGridRange(minX, maxX)
+	firstY, _, countY := rules.IntegerGridRange(minY, maxY)
+	if countX == 0 || countY == 0 {
 		return rules.Position{}, false
 	}
-	for range 16 {
-		x, errX := randomCoordinate(minX, maxX)
-		y, errY := randomCoordinate(minY, maxY)
-		if errX != nil || errY != nil {
-			break
-		}
-		candidate := rules.Position{X: x, Y: y}
-		if candidate != excluded {
-			return candidate, true
-		}
+
+	total := new(big.Int).Mul(big.NewInt(countX), big.NewInt(countY))
+	step := rules.Units(1)
+	excludedIndex := big.NewInt(-1)
+	if excluded.X >= firstX && excluded.X <= maxX && excluded.Y >= firstY && excluded.Y <= maxY &&
+		(excluded.X-firstX)%step == 0 && (excluded.Y-firstY)%step == 0 {
+		xIndex := int64((excluded.X - firstX) / step)
+		yIndex := int64((excluded.Y - firstY) / step)
+		excludedIndex.Mul(big.NewInt(xIndex), big.NewInt(countY)).Add(excludedIndex, big.NewInt(yIndex))
+		total.Sub(total, big.NewInt(1))
 	}
-	for _, candidate := range []rules.Position{{X: minX, Y: minY}, {X: minX, Y: maxY}, {X: maxX, Y: minY}, {X: maxX, Y: maxY}} {
-		if candidate != excluded {
-			return candidate, true
-		}
+	if total.Sign() <= 0 {
+		return rules.Position{}, false
 	}
-	return rules.Position{}, false
+
+	chosen, err := rand.Int(rand.Reader, total)
+	if err != nil {
+		return rules.Position{}, false
+	}
+	if excludedIndex.Sign() >= 0 && chosen.Cmp(excludedIndex) >= 0 {
+		chosen.Add(chosen, big.NewInt(1))
+	}
+	xIndex, yIndex := new(big.Int), new(big.Int)
+	xIndex.QuoRem(chosen, big.NewInt(countY), yIndex)
+	return rules.Position{
+		X: firstX + rules.Coordinate(xIndex.Int64())*step,
+		Y: firstY + rules.Coordinate(yIndex.Int64())*step,
+	}, true
 }

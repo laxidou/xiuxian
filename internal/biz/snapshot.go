@@ -117,7 +117,7 @@ func (s *Service) restoreLocked(payload []byte) error {
 	s.conversationResults = snapshot.ConversationResults
 	s.eventSequence = snapshot.EventSequence
 	s.minX, s.maxX, s.minY, s.maxY = snapshot.MinX, snapshot.MaxX, snapshot.MinY, snapshot.MaxY
-	if s.minX == 0 && s.maxX == 0 && s.minY == 0 && s.maxY == 0 {
+	if s.minX == 0 && s.maxX <= 1 && s.minY == 0 && s.maxY == 0 {
 		s.maxX = initialWorldMaxX
 	}
 	s.nextID = snapshot.NextID

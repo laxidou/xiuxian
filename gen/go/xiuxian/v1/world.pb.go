@@ -1091,15 +1091,18 @@ func (x *WorldBounds) GetMaxYMilliunits() int64 {
 }
 
 type ScanRole struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Realm         string                 `protobuf:"bytes,3,opt,name=realm,proto3" json:"realm,omitempty"`
-	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
-	Distance      float64                `protobuf:"fixed64,5,opt,name=distance,proto3" json:"distance,omitempty"`
-	Position      *Position              `protobuf:"bytes,6,opt,name=position,proto3,oneof" json:"position,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Id                     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name                   string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Realm                  string                 `protobuf:"bytes,3,opt,name=realm,proto3" json:"realm,omitempty"`
+	Status                 string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	Distance               float64                `protobuf:"fixed64,5,opt,name=distance,proto3" json:"distance,omitempty"`
+	Position               *Position              `protobuf:"bytes,6,opt,name=position,proto3,oneof" json:"position,omitempty"`
+	CanTransfer            bool                   `protobuf:"varint,7,opt,name=can_transfer,json=canTransfer,proto3" json:"can_transfer,omitempty"`
+	CanSeize               bool                   `protobuf:"varint,8,opt,name=can_seize,json=canSeize,proto3" json:"can_seize,omitempty"`
+	CanRequestConversation bool                   `protobuf:"varint,9,opt,name=can_request_conversation,json=canRequestConversation,proto3" json:"can_request_conversation,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *ScanRole) Reset() {
@@ -1172,6 +1175,27 @@ func (x *ScanRole) GetPosition() *Position {
 		return x.Position
 	}
 	return nil
+}
+
+func (x *ScanRole) GetCanTransfer() bool {
+	if x != nil {
+		return x.CanTransfer
+	}
+	return false
+}
+
+func (x *ScanRole) GetCanSeize() bool {
+	if x != nil {
+		return x.CanSeize
+	}
+	return false
+}
+
+func (x *ScanRole) GetCanRequestConversation() bool {
+	if x != nil {
+		return x.CanRequestConversation
+	}
+	return false
 }
 
 type OpportunitySignal struct {
@@ -2519,14 +2543,17 @@ const file_xiuxian_v1_world_proto_rawDesc = "" +
 	"\x10min_x_milliunits\x18\x01 \x01(\x12R\x0eminXMilliunits\x12(\n" +
 	"\x10max_x_milliunits\x18\x02 \x01(\x12R\x0emaxXMilliunits\x12(\n" +
 	"\x10min_y_milliunits\x18\x03 \x01(\x12R\x0eminYMilliunits\x12(\n" +
-	"\x10max_y_milliunits\x18\x04 \x01(\x12R\x0emaxYMilliunits\"\xbc\x01\n" +
+	"\x10max_y_milliunits\x18\x04 \x01(\x12R\x0emaxYMilliunits\"\xb6\x02\n" +
 	"\bScanRole\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05realm\x18\x03 \x01(\tR\x05realm\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12\x1a\n" +
 	"\bdistance\x18\x05 \x01(\x01R\bdistance\x125\n" +
-	"\bposition\x18\x06 \x01(\v2\x14.xiuxian.v1.PositionH\x00R\bposition\x88\x01\x01B\v\n" +
+	"\bposition\x18\x06 \x01(\v2\x14.xiuxian.v1.PositionH\x00R\bposition\x88\x01\x01\x12!\n" +
+	"\fcan_transfer\x18\a \x01(\bR\vcanTransfer\x12\x1b\n" +
+	"\tcan_seize\x18\b \x01(\bR\bcanSeize\x128\n" +
+	"\x18can_request_conversation\x18\t \x01(\bR\x16canRequestConversationB\v\n" +
 	"\t_position\"I\n" +
 	"\x11OpportunitySignal\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x1a\n" +

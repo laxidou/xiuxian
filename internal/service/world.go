@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"net/http"
 	"strings"
 
-	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/transport"
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 	"google.golang.org/grpc/metadata"
@@ -81,7 +79,10 @@ func (s *WorldService) Scan(ctx context.Context, request *worldv1.ScanRequest) (
 		TruncatedOpportunities: int32(result.TruncatedOpportunities),
 	}
 	for _, role := range result.Roles {
-		entry := &worldv1.ScanRole{Id: role.ID, Name: role.Name, Realm: role.Realm, Status: string(role.Status), Distance: role.Distance}
+		entry := &worldv1.ScanRole{
+			Id: role.ID, Name: role.Name, Realm: role.Realm, Status: string(role.Status), Distance: role.Distance,
+			CanTransfer: role.CanTransfer, CanSeize: role.CanSeize, CanRequestConversation: role.CanRequestConversation,
+		}
 		if role.Position != nil {
 			entry.Position = protoPosition(*role.Position)
 		}
@@ -99,7 +100,7 @@ func (s *WorldService) Move(ctx context.Context, request *worldv1.MoveRequest) (
 		return nil, err
 	}
 	if request.Target == nil {
-		return nil, kratoserrors.BadRequest("TARGET_REQUIRED", "target is required")
+		return nil, ErrorTargetRequired("target is required")
 	}
 	state, err := s.usecase.Move(ctx, roleID, request.IdempotencyKey, rules.Position{X: rules.Coordinate(request.Target.XMilliunits), Y: rules.Coordinate(request.Target.YMilliunits)}, commandExpectation(request.ExpectedLifeNumber, request.ExpectedStateVersion))
 	if err != nil {
@@ -283,16 +284,16 @@ func (s *WorldService) authenticate(ctx context.Context) (string, error) {
 			}
 		}
 	}
-	return "", kratoserrors.Unauthorized("AUTH_REQUIRED", "authentication required")
+	return "", ErrorUnauthorized("authentication required")
 }
 
 func (s *WorldService) enforceRateLimit(ctx context.Context, scope, subject string, policy biz.RateLimitPolicy) error {
 	allowed, err := s.limiter.Allow(ctx, scope, subject, policy)
 	if err != nil {
-		return kratoserrors.ServiceUnavailable("RATE_LIMIT_UNAVAILABLE", "rate limiter unavailable")
+		return ErrorRateLimitUnavailable("rate limiter unavailable")
 	}
 	if !allowed {
-		return kratoserrors.New(http.StatusTooManyRequests, "RATE_LIMITED", "rate limit exceeded")
+		return ErrorRateLimited("rate limit exceeded")
 	}
 	return nil
 }
@@ -344,18 +345,18 @@ func commandExpectation(lifeNumber, stateVersion int64) biz.CommandExpectation {
 func mapError(err error) error {
 	switch {
 	case errors.Is(err, biz.ErrInvalid), errors.Is(err, biz.ErrIdempotencyKey):
-		return kratoserrors.BadRequest("INVALID_COMMAND", err.Error())
+		return ErrorBadRequest(err.Error())
 	case errors.Is(err, biz.ErrUnauthenticated):
-		return kratoserrors.Unauthorized("AUTH_REQUIRED", err.Error())
+		return ErrorUnauthorized(err.Error())
 	case errors.Is(err, biz.ErrNotFound):
-		return kratoserrors.NotFound("NOT_FOUND", err.Error())
-	case errors.Is(err, biz.ErrForbidden):
-		return kratoserrors.Forbidden("FORBIDDEN", err.Error())
+		return ErrorNotFound(err.Error())
+	case errors.Is(err, biz.ErrForbidden), errors.Is(err, biz.ErrTargetIneligible):
+		return ErrorForbidden(err.Error())
 	case errors.Is(err, biz.ErrConflict), errors.Is(err, biz.ErrNotAlive), errors.Is(err, biz.ErrStaleCommand):
-		return kratoserrors.New(http.StatusPreconditionFailed, "STALE_OR_CONFLICTING_COMMAND", err.Error())
+		return ErrorPreconditionFailed(err.Error())
 	case errors.Is(err, biz.ErrRateLimited):
-		return kratoserrors.New(http.StatusTooManyRequests, "RATE_LIMITED", err.Error())
+		return ErrorRateLimited(err.Error())
 	default:
-		return kratoserrors.InternalServer("INTERNAL", "internal error")
+		return ErrorInternal("internal error")
 	}
 }

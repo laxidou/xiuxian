@@ -156,6 +156,41 @@ async function fillFormInput(cdp, buttonText, label, value) {
   if (!changed) throw new Error(`input not found for ${buttonText}: ${label}`)
 }
 
+async function pressKey(cdp, key, code, virtualKeyCode) {
+  const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode }
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...event })
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...event })
+}
+
+async function selectFirstFormOptionWithKeyboard(cdp, buttonText, optionText) {
+  const focused = await cdp.evaluate(`(() => {
+    const button = [...document.querySelectorAll('button')].find((item) => item.textContent.trim() === ${quote(buttonText)})
+    const select = button?.closest('form')?.querySelector('select')
+    const expected = [...(select?.options ?? [])].find((item) => item.textContent.includes(${quote(optionText)}))
+    if (!select || !expected || select.disabled || expected.index !== 1) return false
+    select.focus()
+    return document.activeElement === select
+  })()`)
+  if (!focused) throw new Error(`keyboard option not ready for ${buttonText}: ${optionText}`)
+  await pressKey(cdp, 'ArrowDown', 'ArrowDown', 40)
+  await waitFor(cdp, `(() => {
+    const button = [...document.querySelectorAll('button')].find((item) => item.textContent.trim() === ${quote(buttonText)})
+    const select = button?.closest('form')?.querySelector('select')
+    return select?.selectedOptions[0]?.textContent.includes(${quote(optionText)}) && button.disabled === false
+  })()`, `${buttonText} keyboard selection`)
+}
+
+async function submitFormWithKeyboard(cdp, buttonText) {
+  const focused = await cdp.evaluate(`(() => {
+    const button = [...document.querySelectorAll('button')].find((item) => item.textContent.trim() === ${quote(buttonText)})
+    if (!button || button.disabled) return false
+    button.focus()
+    return document.activeElement === button
+  })()`)
+  if (!focused) throw new Error(`keyboard submit button not ready: ${buttonText}`)
+  await pressKey(cdp, 'Enter', 'Enter', 13)
+}
+
 class RoleClient {
   constructor(base) {
     this.base = base
@@ -282,8 +317,13 @@ async function runJourney(cdp, viewport, suffix, helper) {
     noOverflow: document.documentElement.scrollWidth <= window.innerWidth + 1,
     inputsLabeled: [...document.querySelectorAll('input')].every((input) => input.labels?.length || input.getAttribute('aria-label')),
     buttonsNamed: [...document.querySelectorAll('button')].every((button) => button.textContent.trim() || button.getAttribute('aria-label')),
+    interactionSelectNames: [...document.querySelectorAll('form.interaction-action select')].map((select) => select.labels?.[0]?.textContent.trim()),
+    emptyStates: document.querySelectorAll('form.interaction-action .interaction-empty[role="status"]').length,
+    emptyControlsDisabled: [...document.querySelectorAll('form.interaction-action')].every((form) => form.querySelector('select')?.disabled && form.querySelector('button')?.disabled),
   }))()`)
-  if (!accessible.noOverflow || !accessible.inputsLabeled || !accessible.buttonsNamed) {
+  if (!accessible.noOverflow || !accessible.inputsLabeled || !accessible.buttonsNamed ||
+    JSON.stringify(accessible.interactionSelectNames) !== JSON.stringify(['传功目标角色', '夺功目标角色', '请求交谈目标角色']) ||
+    accessible.emptyStates !== 3 || !accessible.emptyControlsDisabled) {
     throw new Error(`accessibility/layout assertion failed: ${JSON.stringify(accessible)}`)
   }
 
@@ -348,6 +388,9 @@ async function runJourney(cdp, viewport, suffix, helper) {
   await clickText(cdp, '停止')
   await waitFor(cdp, `document.body.innerText.includes('已停在权威位置')`, 'direction movement stopped')
 
+  const seizureTarget = new RoleClient(baseURL)
+  await seizureTarget.register(`夺功-${suffix}`)
+
   const manualScanClock = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=1000', { method: 'POST' }).then((response) => response.status)`)
   if (manualScanClock !== 200) throw new Error(`manual scan clock status = ${manualScanClock}`)
   await waitFor(cdp, `[...document.querySelectorAll('button')].some((button) => button.textContent.trim() === '神识扫描' && !button.disabled)`, 'scan button available')
@@ -363,8 +406,36 @@ async function runJourney(cdp, viewport, suffix, helper) {
   await waitFor(cdp, `performance.getEntriesByType('resource').filter((entry) => entry.name.endsWith('/scans')).length > ${manualScanCount}`, 'automatic five-second scan', 8_000)
 
   const browserState = await cdp.evaluate(`fetch('/state').then((response) => response.json())`)
-  await fillFormInput(cdp, '请求交谈', '目标 ID', helper.state.id)
-  await clickText(cdp, '请求交谈')
+  const interactionShape = await cdp.evaluate(`({
+    targetIDLabels: [...document.querySelectorAll('label')].filter((label) => label.textContent.includes('目标 ID')).length,
+    targetSelects: [...document.querySelectorAll('section.panel')].find((section) => section.querySelector('h2')?.textContent === '交互')?.querySelectorAll('select').length ?? 0,
+    transferOptions: [...document.querySelector('form[aria-label="传功操作"] select').options].map((option) => option.textContent),
+    seizureOptions: [...document.querySelector('form[aria-label="夺功操作"] select').options].map((option) => option.textContent),
+    conversationOptions: [...document.querySelector('form[aria-label="请求交谈操作"] select').options].map((option) => option.textContent),
+  })`)
+  if (interactionShape.targetIDLabels !== 0 || interactionShape.targetSelects !== 3 ||
+    !interactionShape.transferOptions.some((option) => option.includes(helper.state.name)) ||
+    !interactionShape.transferOptions.some((option) => option.includes(seizureTarget.state.name)) ||
+    interactionShape.seizureOptions.some((option) => option.includes(helper.state.name)) ||
+    !interactionShape.seizureOptions.some((option) => option.includes(seizureTarget.state.name)) ||
+    !interactionShape.conversationOptions.some((option) => option.includes(helper.state.name))) {
+    throw new Error(`interaction target controls = ${JSON.stringify(interactionShape)}`)
+  }
+
+  await selectFirstFormOptionWithKeyboard(cdp, '夺功', seizureTarget.state.name)
+  await submitFormWithKeyboard(cdp, '夺功')
+  await waitFor(cdp, `document.body.innerText.includes('夺功已结算') || Boolean(document.querySelector('.notice.error'))`, 'seizure result')
+  const seizureError = await cdp.evaluate(`document.querySelector('.notice.error')?.textContent ?? ''`)
+  if (seizureError) throw new Error(`seizure failed: ${seizureError}`)
+
+  await selectFirstFormOptionWithKeyboard(cdp, '传功', helper.state.name)
+  await submitFormWithKeyboard(cdp, '传功')
+  await waitFor(cdp, `document.body.innerText.includes('传功已结算') || Boolean(document.querySelector('.notice.error'))`, 'transfer result')
+  const transferError = await cdp.evaluate(`document.querySelector('.notice.error')?.textContent ?? ''`)
+  if (transferError) throw new Error(`transfer failed: ${transferError}`)
+
+  await selectFirstFormOptionWithKeyboard(cdp, '请求交谈', helper.state.name)
+  await submitFormWithKeyboard(cdp, '请求交谈')
   await waitFor(cdp, `document.body.innerText.includes('请求已送达') || Boolean(document.querySelector('.notice.error'))`, 'conversation request result')
   const requestError = await cdp.evaluate(`document.querySelector('.notice.error')?.textContent ?? ''`)
   if (requestError) throw new Error(`conversation request failed: ${requestError}`)
@@ -403,7 +474,7 @@ async function runJourney(cdp, viewport, suffix, helper) {
     const statePayload = JSON.parse(state.body.result?.content?.[0]?.text ?? '{}')
     return initialized.status === 200 && initialized.body.result?.instructions?.includes('get_game_rules') &&
       toolNames.includes('get_game_rules') && toolNames.includes('move_direction') &&
-      rulePayload.rule_version === 2 && statePayload.name === ${quote(roleName)}
+      rulePayload.rule_version === 3 && statePayload.name === ${quote(roleName)}
   })()`)
   if (!apiKey.startsWith('xiu_') || !mcpVerified) throw new Error('documented MCP connection flow failed')
   await delay(1_100)

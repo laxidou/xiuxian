@@ -45,7 +45,7 @@ done
 [ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$base_url/test/clock/advance?milliseconds=1")" = "404" ]
 
 curl -fsS "$base_url/" | grep -q '<div id="root"></div>'
-curl -fsS "$base_url/game-rules" | jq -e '.ruleVersion == 2 and (.realms | length) == 32 and (.aiRules | contains("get_state"))' >/dev/null
+curl -fsS "$base_url/game-rules" | jq -e '.ruleVersion == 3 and (.realms | length) == 32 and (.aiRules | contains("get_state"))' >/dev/null
 
 suffix=$(date +%s)-$$
 account="smoke-$suffix"
@@ -71,7 +71,7 @@ api_key=$(jq -er '.apiKey | select(startswith("xiu_"))' "$response_file")
 
 jq -n '{jsonrpc:"2.0", id:1, method:"tools/call", params:{name:"get_game_rules", arguments:{}}}' |
   curl -fsS -H "Authorization: Bearer $api_key" -H 'Content-Type: application/json' --data-binary @- "$base_url/mcp" |
-  jq -e '.result.isError == false and (.result.content[0].text | fromjson | .rule_version == 2)' >/dev/null
+  jq -e '.result.isError == false and (.result.content[0].text | fromjson | .rule_version == 3)' >/dev/null
 
 jq -n '{jsonrpc:"2.0", id:2, method:"tools/call", params:{name:"get_state", arguments:{}}}' |
   curl -fsS -H "Authorization: Bearer $api_key" -H 'Content-Type: application/json' --data-binary @- "$base_url/mcp" |

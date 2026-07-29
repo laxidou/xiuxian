@@ -10,5 +10,8 @@ export type v1ScanRole = {
     status?: string;
     distance?: number;
     position?: v1Position;
+    canTransfer?: boolean;
+    canSeize?: boolean;
+    canRequestConversation?: boolean;
 };
 

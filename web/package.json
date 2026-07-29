@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "generate:api": "openapi --input ../api/openapi/xiuxian/v1/world.swagger.json --output src/generated --client fetch",
     "typecheck": "tsc -b",
+    "test": "vitest --run",
+    "test:watch": "vitest",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
@@ -18,8 +20,14 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.3.2",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "openapi-typescript-codegen": "^0.29.0"
+    "fast-check": "4.9.0",
+    "jsdom": "26.1.0",
+    "openapi-typescript-codegen": "^0.29.0",
+    "vitest": "4.1.10"
   }
 }

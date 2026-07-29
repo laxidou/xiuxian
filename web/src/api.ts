@@ -63,7 +63,17 @@ export type WorldEvent = {
 }
 
 export type ScanResult = {
-  roles: Array<{ id: string; name: string; realm: string; status: string; distance: number; position?: Position }>
+  roles: Array<{
+    id: string
+    name: string
+    realm: string
+    status: string
+    distance: number
+    position?: Position
+    can_transfer: boolean
+    can_seize: boolean
+    can_request_conversation: boolean
+  }>
   opportunities: Array<{ message: string; distance: number }>
   has_more: boolean
   truncated_roles: number
@@ -229,6 +239,9 @@ function contractScan(response: v1ScanResponse): ScanResult {
       realm: role.realm ?? '',
       status: role.status ?? '',
       distance: role.distance ?? 0,
+      can_transfer: role.canTransfer ?? false,
+      can_seize: role.canSeize ?? false,
+      can_request_conversation: role.canRequestConversation ?? false,
       position: role.position ? {
         x: Number(role.position.xMilliunits ?? 0) / 1000,
         y: Number(role.position.yMilliunits ?? 0) / 1000,

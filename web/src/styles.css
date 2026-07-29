@@ -1,7 +1,7 @@
 :root { font-family: ui-serif, Georgia, "Noto Serif SC", serif; color: #e9e4d5; background: #111713; font-synthesis: none; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at top, #263126 0, #111713 45rem); }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 a { color: #e3ca8b; }
 button { border: 1px solid #bd9d5b; border-radius: .3rem; padding: .65rem .9rem; color: #17140e; background: #d6b96f; cursor: pointer; }
 button:hover { filter: brightness(1.08); }
@@ -27,8 +27,11 @@ dd { margin: .4rem 0 0; font-size: 1.08rem; }
 .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
 .panel { padding: 1.25rem; border: 1px solid #3f493f; background: rgba(21, 29, 22, .88); }
 .inline-form { display: flex; align-items: end; gap: .6rem; flex-wrap: wrap; margin: 1rem 0; }
+.interaction-action > label:first-child, .interaction-empty { flex-basis: 100%; }
+.interaction-action > select { flex: 1 1 14rem; }
+.interaction-empty { margin: 0; font-size: .82rem; }
 label { display: grid; gap: .35rem; color: #c8c0a9; font-size: .85rem; }
-input { min-width: 0; width: 100%; border: 1px solid #555e52; border-radius: .25rem; padding: .65rem; color: #f3edda; background: #0e130f; }
+input, select { min-width: 0; width: 100%; border: 1px solid #555e52; border-radius: .25rem; padding: .65rem; color: #f3edda; background: #0e130f; }
 .scan-results, .messages { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #394139; }
 ul { padding-left: 1.2rem; }
 li { margin: .55rem 0; }

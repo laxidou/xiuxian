@@ -1,5 +1,6 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, Conversation, GameRules, Health, RoleState, ScanResult, WorldEvent } from './api'
+import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { api, Conversation, GameRules, Health, Position, RoleState, ScanResult, WorldEvent } from './api'
+import { deriveDisplayState } from './deriveDisplayState'
 
 const formatDuration = (seconds: number) => {
   const hours = Math.floor(seconds / 3600)
@@ -25,8 +26,21 @@ function GameApp() {
   const [scanSchedule, setScanSchedule] = useState(0)
   const [scanRetry, setScanRetry] = useState(0)
   const [pageVisible, setPageVisible] = useState(document.visibilityState === 'visible')
+  // Rule table (realm thresholds) fetched once; drives realm-derived readouts
+  // during local interpolation. No new endpoint — reuses GetGameRules.
+  const [rules, setRules] = useState<GameRules | null>(null)
+  // Display-only interpolated snapshot used ONLY for the continuous readouts.
+  // Never fed back into commands / state_version / life_number.
+  const [displayState, setDisplayState] = useState<RoleState | null>(null)
   const scanInFlight = useRef(false)
   const cooldownTimer = useRef<number | undefined>(undefined)
+  // Interpolation baseline captured on every authoritative push (reconciliation
+  // mechanism, Req 2.5): the snapshot, the local monotonic time it arrived, and
+  // the client-known target destination (only when THIS client issued the move).
+  const baselineRef = useRef<{ snapshot: RoleState; receivedAt: number; target?: Position } | null>(null)
+  // The last target coordinate THIS client sent via api.move(); cleared by any
+  // other command / push so a stale target never leaks into interpolation.
+  const moveTargetRef = useRef<Position | undefined>(undefined)
 
   const run = useCallback(async <T,>(operation: () => Promise<T>, success?: string) => {
     setError('')
@@ -35,7 +49,8 @@ function GameApp() {
       if (success) setNotice(success)
       return result
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '未知错误')
+      const message = reason instanceof Error ? reason.message : '未知错误'
+      setError(message.includes('target is out of range or no longer eligible') ? '目标已移出功能范围或不再符合条件，请重新神识扫描' : message)
       return undefined
     }
   }, [])
@@ -81,6 +96,45 @@ function GameApp() {
 
   useEffect(() => { void refresh(true) }, [refresh])
   useEffect(() => { void api.health().then(setHealth).catch(() => setHealth(null)) }, [])
+  // Fetch the rule table once (realm thresholds/speed/sense-radius) for local
+  // realm recomputation as 修为 advances. No new endpoint / zero server load.
+  useEffect(() => { void api.gameRules().then(setRules).catch(() => setRules(null)) }, [])
+
+  // Capture the interpolation baseline on every authoritative push. Each state
+  // change (refresh() or a command result) re-bases the display to authority,
+  // discarding any accumulated drift (Req 2.5, 3.5). The target is recorded
+  // only when this client issued a target move and the authority still reports
+  // target mode; otherwise it is dropped so target-mode position holds.
+  useEffect(() => {
+    if (!state) return
+    baselineRef.current = {
+      snapshot: state,
+      receivedAt: performance.now(),
+      target: state.movement_mode === 'target' ? moveTargetRef.current : undefined,
+    }
+    setDisplayState(state)
+  }, [state])
+
+  // Display-only tick: advance the continuous readouts between pushes using the
+  // same rules as the world authority. Gated on alive + page visible; never
+  // calls api.*, never mutates authoritative state / state_version / life_number
+  // (Req 3.1, 3.3, 3.4). Stops when not alive, hidden, or before rules load.
+  useEffect(() => {
+    if (!rules || !state || state.status !== 'alive' || !pageVisible) return
+    const tick = () => {
+      const baseline = baselineRef.current
+      if (!baseline) return
+      const elapsedSeconds = (performance.now() - baseline.receivedAt) / 1000
+      setDisplayState(deriveDisplayState(baseline.snapshot, elapsedSeconds, rules, baseline.target))
+    }
+    // Drive the display-only readouts at a modest ~5 Hz cadence. A single
+    // setInterval (rather than a self-rescheduling requestAnimationFrame loop)
+    // keeps the updates smooth in a real browser while staying deterministic
+    // under fake timers, where a 16ms rAF loop would drain tens of thousands of
+    // callbacks per advanced second.
+    const interval = setInterval(tick, 200)
+    return () => clearInterval(interval)
+  }, [rules, state, pageVisible])
 
   useEffect(() => {
     const onVisibility = () => setPageVisible(document.visibilityState === 'visible')
@@ -117,11 +171,18 @@ function GameApp() {
 
   if (!state) return <AuthScreen onAuthenticated={(next) => { clearRoleView(); setState(next); void refresh() }} error={error} health={health} run={run} />
 
-  const updateState = (next?: RoleState) => {
+  const updateState = (next?: RoleState, target?: Position) => {
+    // Record the client-known target only for target moves; any other command
+    // clears it so interpolation never uses a stale destination.
+    moveTargetRef.current = target
     if (next) setState(next)
     void refresh()
   }
   const scanUnavailable = scanBusy || scanCooling
+  const scanRoles = scan?.roles ?? []
+  // Continuous readouts render from the interpolated display state; when it is
+  // unavailable (rules not loaded / pre-tick) fall back to authoritative state.
+  const view = displayState ?? state
 
   return (
     <main>
@@ -141,12 +202,12 @@ function GameApp() {
       {(notice || error) && <p className={error ? 'notice error' : 'notice'} role="status">{error || notice}</p>}
 
       <section className="status-grid" aria-label="角色状态">
-        <Stat label="修为" value={state.cultivation.toFixed(3)} />
-        <Stat label="境界" value={`${state.realm_level} · ${state.realm}`} />
-        <Stat label="年龄 / 寿元" value={`${formatDuration(state.age_seconds)} / ${formatDuration(state.lifespan_seconds)}`} />
-        <Stat label="位置" value={`(${state.position.x}, ${state.position.y})`} />
-        <Stat label="速度上限" value={`${state.speed} / 秒`} />
-        <Stat label="神识" value={`${state.sense_radius}`} />
+        <Stat label="修为" value={view.cultivation.toFixed(3)} />
+        <Stat label="境界" value={`${view.realm_level} · ${view.realm}`} />
+        <Stat label="年龄 / 寿元" value={`${formatDuration(view.age_seconds)} / ${formatDuration(view.lifespan_seconds)}`} />
+        <Stat label="位置" value={`(${view.position.x}, ${view.position.y})`} />
+        <Stat label="速度上限" value={`${view.speed} / 秒`} />
+        <Stat label="神识" value={`${view.sense_radius}`} />
         <Stat label="移动" value={movementSummary(state)} />
       </section>
 
@@ -165,9 +226,9 @@ function GameApp() {
 
           <section className="panel">
             <h2>交互</h2>
-            <TargetAction label="传功" withAmount onSubmit={(target, amount) => run(() => api.transfer(target, amount!), '传功已结算').then(updateState)} />
-            <TargetAction label="夺功" onSubmit={(target) => run(() => api.seize(target), '夺功已结算').then(updateState)} />
-            <TargetAction label="请求交谈" onSubmit={(target) => run(() => api.requestConversation(target), '请求已送达').then(() => void refresh())} />
+            <TargetAction label="传功" emptyLabel="当前传功范围内没有角色" targets={scanRoles.filter((role) => role.can_transfer)} withAmount onSubmit={(target, amount) => run(() => api.transfer(target, amount!), '传功已结算').then(updateState)} />
+            <TargetAction label="夺功" emptyLabel="当前夺功范围内没有符合条件的角色" targets={scanRoles.filter((role) => role.can_seize)} onSubmit={(target) => run(() => api.seize(target), '夺功已结算').then(updateState)} />
+            <TargetAction label="请求交谈" emptyLabel="当前神识范围内没有可交谈角色" targets={scanRoles.filter((role) => role.can_request_conversation)} onSubmit={(target) => run(() => api.requestConversation(target), '请求已送达').then(() => void refresh())} />
           </section>
         </div>
       )}
@@ -218,14 +279,14 @@ function directionLabel(direction?: RoleState['movement_direction']) {
   return ({ up: '上（+Y）', down: '下（-Y）', left: '左（-X）', right: '右（+X）' } as const)[direction ?? 'up']
 }
 
-function MoveForm({ state, onChanged, run }: { state: RoleState; onChanged: (state?: RoleState) => void; run: Runner }) {
+function MoveForm({ state, onChanged, run }: { state: RoleState; onChanged: (state?: RoleState, target?: Position) => void; run: Runner }) {
   const [x, setX] = useState(state.position.x)
   const [y, setY] = useState(state.position.y)
   const [speed, setSpeed] = useState(Math.max(1, state.movement_speed_setting || state.speed))
   useEffect(() => setSpeed((value) => Math.min(Math.max(1, Number.isFinite(value) ? value : state.speed), state.speed)), [state.speed])
   const moveDirection = (direction: 'up' | 'down' | 'left' | 'right') => void run(() => api.moveDirection(direction, speed), `开始向${directionLabel(direction)}持续移动`).then(onChanged)
   return <>
-    <form className="inline-form" onSubmit={(event) => { event.preventDefault(); void run(() => api.move(x, y), '轨迹已更新').then(onChanged) }}><label>目标 X<input type="number" step="0.001" value={x} onChange={(e) => setX(e.target.valueAsNumber)} /></label><label>目标 Y<input type="number" step="0.001" value={y} onChange={(e) => setY(e.target.valueAsNumber)} /></label><button>移动</button><button type="button" className="quiet" onClick={() => void run(api.stop, '已停在权威位置').then(onChanged)}>停止</button></form>
+    <form className="inline-form" onSubmit={(event) => { event.preventDefault(); void run(() => api.move(x, y), '轨迹已更新').then((next) => onChanged(next, { x, y })) }}><label>目标 X<input type="number" step="0.001" value={x} onChange={(e) => setX(e.target.valueAsNumber)} /></label><label>目标 Y<input type="number" step="0.001" value={y} onChange={(e) => setY(e.target.valueAsNumber)} /></label><button>移动</button><button type="button" className="quiet" onClick={() => void run(api.stop, '已停在权威位置').then((next) => onChanged(next))}>停止</button></form>
     <div className="direction-controls">
       <label>设定行进速度（上限 {state.speed} / 秒）<input type="number" min="1" max={state.speed} step="1" value={speed} onChange={(event) => setSpeed(event.target.valueAsNumber)} /></label>
       <div className="direction-pad" aria-label="四向持续移动">
@@ -240,7 +301,23 @@ function MoveForm({ state, onChanged, run }: { state: RoleState; onChanged: (sta
 
 function ScanView({ result }: { result: ScanResult }) { return <div className="scan-results" aria-live="polite"><h3>神识所见</h3>{result.roles.length === 0 && result.opportunities.length === 0 && <p className="muted">四野寂静。</p>}<ul>{result.roles.map((role) => <li key={role.id}><strong>{role.name}</strong> · {role.realm} · 距离 {role.distance.toFixed(3)} {role.position && `· (${role.position.x}, ${role.position.y})`}</li>)}{result.opportunities.map((item, index) => <li key={`opportunity-${index}`}><strong>{item.message}</strong> · 距离约 {item.distance.toFixed(3)}</li>)}</ul>{result.has_more && <p>结果已截断：另有 {result.truncated_roles} 个角色、{result.truncated_opportunities} 个机缘信号。</p>}</div> }
 
-function TargetAction({ label, withAmount, onSubmit }: { label: string; withAmount?: boolean; onSubmit: (target: string, amount?: number) => void }) { const [target, setTarget] = useState(''); const [amount, setAmount] = useState(1); return <form className="inline-form" onSubmit={(event) => { event.preventDefault(); onSubmit(target, withAmount ? amount : undefined) }}><label>目标 ID<input required value={target} onChange={(e) => setTarget(e.target.value)} /></label>{withAmount && <label>分钟<input required type="number" min="1" step="1" value={amount} onChange={(e) => setAmount(e.target.valueAsNumber)} /></label>}<button>{label}</button></form> }
+type InteractionTarget = ScanResult['roles'][number]
+
+function TargetAction({ label, emptyLabel, targets, withAmount, onSubmit }: { label: string; emptyLabel: string; targets: InteractionTarget[]; withAmount?: boolean; onSubmit: (target: string, amount?: number) => void }) {
+  const [target, setTarget] = useState('')
+  const [amount, setAmount] = useState(1)
+  const targetID = useId()
+  const emptyID = `${targetID}-empty`
+  const selected = targets.some((candidate) => candidate.id === target)
+  useEffect(() => { if (target && !selected) setTarget('') }, [selected, target])
+  return <form className="inline-form interaction-action" aria-label={`${label}操作`} onSubmit={(event) => { event.preventDefault(); if (selected) onSubmit(target, withAmount ? amount : undefined) }}>
+    <label htmlFor={targetID}>{label}目标角色</label>
+    <select id={targetID} required disabled={targets.length === 0} aria-describedby={targets.length === 0 ? emptyID : undefined} value={selected ? target : ''} onChange={(event) => setTarget(event.target.value)}><option value="" disabled>{targets.length === 0 ? emptyLabel : '请选择角色'}</option>{targets.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.realm} · 距离 {candidate.distance.toFixed(3)}</option>)}</select>
+    {targets.length === 0 && <p id={emptyID} className="muted interaction-empty" role="status">{emptyLabel}</p>}
+    {withAmount && <label>分钟<input required type="number" min="1" step="1" value={amount} onChange={(e) => setAmount(e.target.valueAsNumber)} /></label>}
+    <button disabled={!selected}>{label}</button>
+  </form>
+}
 
 function ConversationPanel({ conversations, selfID, run, refresh }: { conversations: Conversation[]; selfID: string; run: Runner; refresh: () => Promise<void> }) {
   const [message, setMessage] = useState('')

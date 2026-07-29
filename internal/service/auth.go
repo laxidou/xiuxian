@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -39,7 +38,7 @@ func (service *AuthService) Register(ctx context.Context, request *worldv1.Regis
 	if err != nil {
 		return nil, mapError(err)
 	}
-	service.setSessionCookie(ctx, token, int((24 * time.Hour).Seconds()))
+	service.setSessionCookie(ctx, token, int((24*time.Hour).Seconds()))
 	return &worldv1.AuthResponse{State: RoleState(state)}, nil
 }
 
@@ -51,7 +50,7 @@ func (service *AuthService) Login(ctx context.Context, request *worldv1.LoginReq
 	if err != nil {
 		return nil, mapError(err)
 	}
-	service.setSessionCookie(ctx, token, int((24 * time.Hour).Seconds()))
+	service.setSessionCookie(ctx, token, int((24*time.Hour).Seconds()))
 	return &worldv1.AuthResponse{State: RoleState(state)}, nil
 }
 
@@ -97,10 +96,10 @@ func (service *AuthService) limitPublicAuth(ctx context.Context, scope, account 
 	}
 	allowed, err := service.limiter.Allow(ctx, scope, subject, policy)
 	if err != nil {
-		return kratoserrors.ServiceUnavailable("RATE_LIMIT_UNAVAILABLE", "rate limiter unavailable")
+		return ErrorRateLimitUnavailable("rate limiter unavailable")
 	}
 	if !allowed {
-		return kratoserrors.New(http.StatusTooManyRequests, "RATE_LIMITED", "rate limit exceeded")
+		return ErrorRateLimited("rate limit exceeded")
 	}
 	return nil
 }

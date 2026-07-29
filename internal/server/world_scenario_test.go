@@ -329,7 +329,10 @@ func legacyScan(value map[string]any) map[string]any {
 	roles := make([]any, 0)
 	for _, item := range items(value, "roles") {
 		role := item.(map[string]any)
-		normalized := map[string]any{"id": role["id"], "name": role["name"], "realm": role["realm"], "status": role["status"], "distance": role["distance"]}
+		normalized := map[string]any{
+			"id": role["id"], "name": role["name"], "realm": role["realm"], "status": role["status"], "distance": role["distance"],
+			"can_transfer": role["canTransfer"], "can_seize": role["canSeize"], "can_request_conversation": role["canRequestConversation"],
+		}
 		if position, ok := role["position"].(map[string]any); ok {
 			normalized["position"] = map[string]any{"x": units(position["xMilliunits"]), "y": units(position["yMilliunits"])}
 		}
@@ -447,7 +450,7 @@ func TestPublicGameRulesMatchTheActiveAuthorityVersion(t *testing.T) {
 		t.Fatalf("game rules status = %d, want 200", response.StatusCode)
 	}
 	guide := decode[map[string]any](t, response)
-	if guide["ruleVersion"] != float64(2) || len(guide["sections"].([]any)) < 10 || len(guide["realms"].([]any)) != 32 {
+	if guide["ruleVersion"] != float64(3) || len(guide["sections"].([]any)) < 10 || len(guide["realms"].([]any)) != 32 {
 		t.Fatalf("public game rules = %#v", guide)
 	}
 	if !strings.Contains(fmt.Sprint(guide["aiRules"]), "get_state") || guide["canonicalUrl"] != "/rules" {
@@ -726,6 +729,9 @@ func TestScanTransferAndSeizureShareAuthoritativeState(t *testing.T) {
 	if target["id"] != lowState["id"] || target["position"] == nil {
 		t.Fatalf("higher-realm scan should reveal the lower role precisely: %#v", target)
 	}
+	if target["can_transfer"] != true || target["can_seize"] != true || target["can_request_conversation"] != true {
+		t.Fatalf("higher-realm interaction eligibility = %#v, want all actions", target)
+	}
 
 	eventsResp := low.request(t, http.MethodGet, "/api/v1/events", nil, nil)
 	events := decode[map[string]any](t, eventsResp)["events"].([]any)
@@ -736,6 +742,9 @@ func TestScanTransferAndSeizureShareAuthoritativeState(t *testing.T) {
 	lowRoles := lowScan["roles"].([]any)
 	if len(lowRoles) != 1 || lowRoles[0].(map[string]any)["position"] == nil {
 		t.Fatalf("lower-realm role should identify an in-range higher role precisely: %#v", lowRoles)
+	}
+	if lowRoles[0].(map[string]any)["can_seize"] != false || lowRoles[0].(map[string]any)["can_transfer"] != true || lowRoles[0].(map[string]any)["can_request_conversation"] != true {
+		t.Fatalf("lower-realm interaction eligibility = %#v", lowRoles[0])
 	}
 
 	transferBody := map[string]any{"target_id": lowState["id"], "amount_minutes": 1}
@@ -765,6 +774,234 @@ func TestScanTransferAndSeizureShareAuthoritativeState(t *testing.T) {
 	deadTarget := decode[map[string]any](t, low.request(t, http.MethodGet, "/api/v1/state", nil, nil))
 	if deadTarget["status"] != "pending_reincarnation" || deadTarget["cultivation"] != float64(0) {
 		t.Fatalf("seized target state = %#v", deadTarget)
+	}
+}
+
+func TestScanInteractionEligibilityUsesIndependentInclusiveRanges(t *testing.T) {
+	for _, test := range []struct {
+		name                                   string
+		x                                      float64
+		visible, transfer, seize, conversation bool
+	}{
+		{name: "夺功界外", x: 1.001, visible: true, transfer: true, seize: false, conversation: true},
+		{name: "传功边界", x: 5, visible: true, transfer: true, seize: false, conversation: true},
+		{name: "传功界外", x: 5.001, visible: true, transfer: false, seize: false, conversation: true},
+		{name: "交谈边界", x: 25, visible: true, transfer: false, seize: false, conversation: true},
+		{name: "神识界外", x: 25.001, visible: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server, clock := newServer(t)
+			scanner := &testClient{baseURL: server.URL}
+			registered := scanner.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+				"account": "eligibility-scanner", "password": "a sufficiently long password", "role_name": "量界者",
+			}, nil)
+			registered.Body.Close()
+			clock.Advance(5 * time.Minute)
+			target := &testClient{baseURL: server.URL}
+			registered = target.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+				"account": "eligibility-target", "password": "a sufficiently long password", "role_name": test.name,
+			}, nil)
+			registered.Body.Close()
+			move := target.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": test.x, "y": 0}, map[string]string{"Idempotency-Key": "eligibility-move"})
+			move.Body.Close()
+			clock.Advance(30 * time.Second)
+
+			scan := decode[map[string]any](t, scanner.request(t, http.MethodPost, "/api/v1/scan", map[string]any{}, nil))
+			roles := scan["roles"].([]any)
+			if !test.visible {
+				if len(roles) != 0 {
+					t.Fatalf("out-of-sense target was visible: %#v", roles)
+				}
+				return
+			}
+			if len(roles) != 1 {
+				t.Fatalf("scan roles = %#v, want one", roles)
+			}
+			role := roles[0].(map[string]any)
+			if role["can_transfer"] != test.transfer || role["can_seize"] != test.seize || role["can_request_conversation"] != test.conversation {
+				t.Fatalf("eligibility = %#v, want transfer=%v seize=%v conversation=%v", role, test.transfer, test.seize, test.conversation)
+			}
+		})
+	}
+}
+
+func TestSeizureUsesInclusiveOneUnitAuthoritativeRange(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		targetX    float64
+		wantStatus int
+	}{
+		{name: "at boundary", targetX: 1, wantStatus: http.StatusOK},
+		{name: "one milliunit beyond boundary", targetX: 1.001, wantStatus: http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server, clock := newServer(t)
+			attacker := &testClient{baseURL: server.URL}
+			registered := attacker.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+				"account": "range-attacker", "password": "a sufficiently long password", "role_name": "逐日",
+			}, nil)
+			registered.Body.Close()
+			clock.Advance(5 * time.Minute)
+
+			target := &testClient{baseURL: server.URL}
+			targetState := decode[map[string]any](t, target.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+				"account": "range-target", "password": "a sufficiently long password", "role_name": "微尘",
+			}, nil))
+			move := target.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": test.targetX, "y": 0}, map[string]string{"Idempotency-Key": "range-move"})
+			move.Body.Close()
+			clock.Advance(time.Duration(math.Ceil(test.targetX*1000)) * time.Millisecond)
+
+			seized := attacker.request(t, http.MethodPost, "/api/v1/cultivation/seize", map[string]any{"target_id": targetState["id"]}, map[string]string{"Idempotency-Key": "range-seize"})
+			if seized.StatusCode != test.wantStatus {
+				t.Fatalf("seizure status = %d, want %d", seized.StatusCode, test.wantStatus)
+			}
+			if test.wantStatus == http.StatusForbidden {
+				payload, err := io.ReadAll(seized.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Contains(payload, []byte("target is out of range or no longer eligible")) {
+					t.Fatalf("ineligible target error = %s", payload)
+				}
+			}
+			seized.Body.Close()
+		})
+	}
+}
+
+func TestSeizureRequiresStrictlyHigherLivingAttacker(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		setup func(t *testing.T, server *httptest.Server, clock *biz.ManualClock) (*testClient, string)
+	}{
+		{
+			name: "same realm",
+			setup: func(t *testing.T, server *httptest.Server, _ *biz.ManualClock) (*testClient, string) {
+				attacker := &testClient{baseURL: server.URL}
+				registered := attacker.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+					"account": "same-attacker", "password": "a sufficiently long password", "role_name": "同阶甲",
+				}, nil)
+				registered.Body.Close()
+				target := &testClient{baseURL: server.URL}
+				targetState := decode[map[string]any](t, target.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+					"account": "same-target", "password": "a sufficiently long password", "role_name": "同阶乙",
+				}, nil))
+				return attacker, targetState["id"].(string)
+			},
+		},
+		{
+			name: "lower realm attacker",
+			setup: func(t *testing.T, server *httptest.Server, clock *biz.ManualClock) (*testClient, string) {
+				target := &testClient{baseURL: server.URL}
+				targetState := decode[map[string]any](t, target.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+					"account": "higher-target", "password": "a sufficiently long password", "role_name": "高阶目标",
+				}, nil))
+				clock.Advance(5 * time.Minute)
+				attacker := &testClient{baseURL: server.URL}
+				registered := attacker.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+					"account": "lower-attacker", "password": "a sufficiently long password", "role_name": "低阶发起者",
+				}, nil)
+				registered.Body.Close()
+				return attacker, targetState["id"].(string)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server, clock := newServer(t)
+			attacker, targetID := test.setup(t, server, clock)
+			response := attacker.request(t, http.MethodPost, "/api/v1/cultivation/seize", map[string]any{"target_id": targetID}, map[string]string{"Idempotency-Key": "strict-realm-seize"})
+			if response.StatusCode != http.StatusForbidden {
+				t.Fatalf("seizure status = %d, want %d", response.StatusCode, http.StatusForbidden)
+			}
+			response.Body.Close()
+		})
+	}
+}
+
+func TestConcurrentSeizureTransfersCultivationExactlyOnce(t *testing.T) {
+	server, clock := newServer(t)
+	attackers := []*testClient{{baseURL: server.URL}, {baseURL: server.URL}}
+	for index, attacker := range attackers {
+		registered := attacker.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+			"account": fmt.Sprintf("concurrent-attacker-%d", index), "password": "a sufficiently long password", "role_name": fmt.Sprintf("并夺%d", index),
+		}, nil)
+		registered.Body.Close()
+	}
+	clock.Advance(5 * time.Minute)
+	target := &testClient{baseURL: server.URL}
+	targetState := decode[map[string]any](t, target.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "concurrent-target", "password": "a sufficiently long password", "role_name": "并夺目标",
+	}, nil))
+	clock.Advance(time.Minute)
+
+	type attempt struct {
+		index        int
+		status       int
+		lifeNumber   string
+		stateVersion string
+	}
+	attempts := make([]attempt, len(attackers))
+	for index, attacker := range attackers {
+		lifeNumber, stateVersion := attacker.fetchExpectation(t)
+		attempts[index] = attempt{index: index, lifeNumber: lifeNumber, stateVersion: stateVersion}
+	}
+	results := make(chan attempt, len(attempts))
+	var group sync.WaitGroup
+	for _, current := range attempts {
+		group.Add(1)
+		go func(current attempt) {
+			defer group.Done()
+			response := attackers[current.index].request(t, http.MethodPost, "/api/v1/cultivation/seize", map[string]any{"target_id": targetState["id"]}, map[string]string{
+				"Idempotency-Key": "concurrent-seize-" + strconv.Itoa(current.index), "X-Expected-Life-Number": current.lifeNumber, "X-Expected-State-Version": current.stateVersion,
+			})
+			current.status = response.StatusCode
+			response.Body.Close()
+			results <- current
+		}(current)
+	}
+	group.Wait()
+	close(results)
+
+	winner := attempt{index: -1}
+	for result := range results {
+		switch result.status {
+		case http.StatusOK:
+			if winner.index != -1 {
+				t.Fatalf("multiple successful seizures: first=%+v second=%+v", winner, result)
+			}
+			winner = result
+		case http.StatusForbidden:
+		default:
+			t.Fatalf("concurrent seizure status = %d, want 200 or 403", result.status)
+		}
+	}
+	if winner.index == -1 {
+		t.Fatal("concurrent seizures had no winner")
+	}
+
+	retry := attackers[winner.index].request(t, http.MethodPost, "/api/v1/cultivation/seize", map[string]any{"target_id": targetState["id"]}, map[string]string{
+		"Idempotency-Key": "concurrent-seize-" + strconv.Itoa(winner.index), "X-Expected-Life-Number": winner.lifeNumber, "X-Expected-State-Version": winner.stateVersion,
+	})
+	if retry.StatusCode != http.StatusOK {
+		t.Fatalf("idempotent seizure retry status = %d, want 200", retry.StatusCode)
+	}
+	retry.Body.Close()
+
+	first := decode[map[string]any](t, attackers[0].request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	second := decode[map[string]any](t, attackers[1].request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	deadTarget := decode[map[string]any](t, target.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	if first["cultivation"].(float64)+second["cultivation"].(float64) != 13 || deadTarget["cultivation"] != float64(0) || deadTarget["status"] != "pending_reincarnation" {
+		t.Fatalf("cultivation was not conserved: first=%#v second=%#v target=%#v", first, second, deadTarget)
+	}
+	events := decode[map[string]any](t, target.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	deathCount := 0
+	for _, raw := range events {
+		if raw.(map[string]any)["type"] == "death" {
+			deathCount++
+		}
+	}
+	if deathCount != 1 {
+		t.Fatalf("target death events = %d, want exactly one: %#v", deathCount, events)
 	}
 }
 
@@ -1103,12 +1340,10 @@ func TestOpportunityClaimsAtExactCoordinateAndConvertsLinearly(t *testing.T) {
 		"account": "finder", "password": "a sufficiently long password", "role_name": "寻缘人",
 	}, nil)
 	registered.Body.Close()
-	move := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 0.001, "y": 0}, map[string]string{"Idempotency-Key": "first-life-move"})
-	move.Body.Close()
 	clock.Advance(8 * time.Hour)
 	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
 	dead.Body.Close()
-	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 0, "y": 0}, map[string]string{"Idempotency-Key": "second-life"})
+	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "second-life"})
 	reborn.Body.Close()
 	claimed := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
 	claimed.Body.Close()
@@ -1129,4 +1364,482 @@ func TestOpportunityClaimsAtExactCoordinateAndConvertsLinearly(t *testing.T) {
 	if math.Abs(state["cultivation"].(float64)-want) > 0.000001 {
 		t.Fatalf("cultivation after 6h natural + quarter opportunity = %v, want %v", state["cultivation"], want)
 	}
+}
+
+func TestInitialWorldPlacesOriginDeathOpportunityAtIntegerCoordinate(t *testing.T) {
+	server, clock := newServer(t)
+	client := &testClient{baseURL: server.URL}
+	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "integer-opportunity", "password": "a sufficiently long password", "role_name": "整缘",
+	}, nil)
+	registered.Body.Close()
+
+	bounds := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/world/bounds", nil, nil))
+	if bounds["min_x"] != float64(0) || bounds["max_x"] != float64(1) || bounds["min_y"] != float64(0) || bounds["max_y"] != float64(0) {
+		t.Fatalf("initial world bounds = %#v, want x [0,1], y 0", bounds)
+	}
+
+	clock.Advance(8 * time.Hour)
+	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	dead.Body.Close()
+	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "integer-rebirth"})
+	if reborn.StatusCode != http.StatusOK {
+		t.Fatalf("integer-coordinate reincarnation status = %d, want 200", reborn.StatusCode)
+	}
+	reborn.Body.Close()
+
+	events := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	found := false
+	for _, raw := range events {
+		if raw.(map[string]any)["message"] == "觅得机缘" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("origin death opportunity was not claimed at integer coordinate (1,0): %#v", events)
+	}
+}
+
+func TestOpportunityScanHidesIntegerCoordinateAndCultivationDetails(t *testing.T) {
+	server, clock := newServer(t)
+	source := &testClient{baseURL: server.URL}
+	registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "hidden-opportunity-source", "password": "a sufficiently long password", "role_name": "藏缘者",
+	}, nil)
+	registered.Body.Close()
+	clock.Advance(8 * time.Hour)
+	dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	dead.Body.Close()
+
+	finder := &testClient{baseURL: server.URL}
+	registered = finder.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "hidden-opportunity-finder", "password": "a sufficiently long password", "role_name": "感缘者",
+	}, nil)
+	registered.Body.Close()
+	scan := decode[map[string]any](t, finder.request(t, http.MethodPost, "/api/v1/scan", map[string]any{}, nil))
+	signals := scan["opportunities"].([]any)
+	if len(signals) != 1 {
+		t.Fatalf("opportunity signals = %#v, want one", signals)
+	}
+	signal := signals[0].(map[string]any)
+	if signal["message"] != "感应到机缘" || len(signal) != 2 {
+		t.Fatalf("opportunity signal leaked hidden details: %#v", signal)
+	}
+	for _, hidden := range []string{"position", "x", "y", "level", "sense_radius", "cultivation", "source_id"} {
+		if _, leaked := signal[hidden]; leaked {
+			t.Fatalf("opportunity signal leaked %q: %#v", hidden, signal)
+		}
+	}
+}
+
+func TestFractionalDeathPlacesOpportunityOnAnIntegerGridPoint(t *testing.T) {
+	server, clock := newServer(t)
+	source := &testClient{baseURL: server.URL}
+	registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "fractional-death-source", "password": "a sufficiently long password", "role_name": "半步陨",
+	}, nil)
+	registered.Body.Close()
+	moving := source.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 0.5, "y": 0}, map[string]string{"Idempotency-Key": "fractional-death-move"})
+	moving.Body.Close()
+	clock.Advance(500 * time.Millisecond)
+	arrived := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	arrived.Body.Close()
+	clock.Advance(8*time.Hour - 500*time.Millisecond)
+	dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	dead.Body.Close()
+
+	finder := &testClient{baseURL: server.URL}
+	registeredAt := clock.Now().UnixMilli()
+	registered = finder.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "fractional-death-finder", "password": "a sufficiently long password", "role_name": "整点寻",
+	}, nil)
+	registered.Body.Close()
+	events := decode[map[string]any](t, finder.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	if !containsEventMessage(events, "觅得机缘") {
+		moving = finder.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "fractional-opportunity-search"})
+		moving.Body.Close()
+		clock.Advance(time.Second)
+		settled := finder.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+		settled.Body.Close()
+		events = decode[map[string]any](t, finder.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	}
+	claimAt := int64(-1)
+	for _, raw := range events {
+		event := raw.(map[string]any)
+		if event["message"] == "觅得机缘" {
+			claimAt = int64(event["created_at"].(float64))
+			break
+		}
+	}
+	if claimAt != registeredAt && claimAt != registeredAt+time.Second.Milliseconds() {
+		t.Fatalf("fractional death opportunity claimed at %d, want integer grid arrival %d or %d; events=%#v", claimAt, registeredAt, registeredAt+time.Second.Milliseconds(), events)
+	}
+}
+
+func TestDirectionalTrajectoryClaimsOpportunityAtCrossingTime(t *testing.T) {
+	server, clock := newServer(t)
+	client := &testClient{baseURL: server.URL}
+	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "trajectory-opportunity", "password": "a sufficiently long password", "role_name": "过缘",
+	}, nil)
+	registered.Body.Close()
+
+	clock.Advance(8 * time.Hour)
+	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	dead.Body.Close()
+	reborn := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 0, "y": 0}, map[string]string{"Idempotency-Key": "trajectory-rebirth"}))
+	rebornAt := clock.Now().UnixMilli()
+	started := client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "trajectory-right"})
+	started.Body.Close()
+
+	clock.Advance(2 * time.Second)
+	state := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	if state["position"].(map[string]any)["x"] != float64(2) || reborn["position"].(map[string]any)["x"] != float64(0) {
+		t.Fatalf("trajectory states = reborn %#v current %#v", reborn, state)
+	}
+
+	events := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	for _, raw := range events {
+		event := raw.(map[string]any)
+		if event["message"] == "觅得机缘" {
+			if int64(event["created_at"].(float64)) != rebornAt+time.Second.Milliseconds() {
+				t.Fatalf("opportunity claimed at %v, want crossing time %v", event["created_at"], rebornAt+time.Second.Milliseconds())
+			}
+			return
+		}
+	}
+	t.Fatalf("directional trajectory did not claim crossed opportunity: %#v", events)
+}
+
+func TestTargetTrajectoryClaimsOpportunityAtCrossingTime(t *testing.T) {
+	server, clock := newServer(t)
+	client := &testClient{baseURL: server.URL}
+	registered := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "target-trajectory-opportunity", "password": "a sufficiently long password", "role_name": "直取",
+	}, nil)
+	registered.Body.Close()
+	clock.Advance(8 * time.Hour)
+	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	dead.Body.Close()
+	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 0, "y": 0}, map[string]string{"Idempotency-Key": "target-trajectory-rebirth"})
+	reborn.Body.Close()
+	rebornAt := clock.Now().UnixMilli()
+	started := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 2, "y": 0}, map[string]string{"Idempotency-Key": "target-trajectory-move"})
+	started.Body.Close()
+
+	clock.Advance(2 * time.Second)
+	settled := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	settled.Body.Close()
+	events := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	for _, raw := range events {
+		event := raw.(map[string]any)
+		if event["message"] == "觅得机缘" {
+			if int64(event["created_at"].(float64)) != rebornAt+time.Second.Milliseconds() {
+				t.Fatalf("opportunity claimed at %v, want crossing time %v", event["created_at"], rebornAt+time.Second.Milliseconds())
+			}
+			return
+		}
+	}
+	t.Fatalf("target trajectory did not claim crossed opportunity: %#v", events)
+}
+
+func TestTargetTrajectoryPassingNearOpportunityDoesNotClaimIt(t *testing.T) {
+	server, clock := newServer(t)
+	source := &testClient{baseURL: server.URL}
+	registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "near-miss-source", "password": "a sufficiently long password", "role_name": "擦缘源",
+	}, nil)
+	registered.Body.Close()
+	clock.Advance(8 * time.Hour)
+	dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	dead.Body.Close()
+
+	traveller := &testClient{baseURL: server.URL}
+	registered = traveller.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "near-miss-traveller", "password": "a sufficiently long password", "role_name": "擦肩客",
+	}, nil)
+	registered.Body.Close()
+	moving := traveller.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 2, "y": 0.001}, map[string]string{"Idempotency-Key": "near-miss-move"})
+	moving.Body.Close()
+	clock.Advance(2100 * time.Millisecond)
+	settled := traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	settled.Body.Close()
+	events := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	if containsEventMessage(events, "觅得机缘") {
+		t.Fatalf("near-miss trajectory claimed opportunity: %#v", events)
+	}
+}
+
+func TestTrajectoryOpportunitySettlementOrdersCrossingAndNaturalDeath(t *testing.T) {
+	t.Run("crossing before death", func(t *testing.T) {
+		server, clock := newServer(t)
+		source := &testClient{baseURL: server.URL}
+		registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+			"account": "before-death-source", "password": "a sufficiently long password", "role_name": "先陨源",
+		}, nil)
+		registered.Body.Close()
+		clock.Advance(2 * time.Second)
+		traveller := &testClient{baseURL: server.URL}
+		registered = traveller.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+			"account": "before-death-traveller", "password": "a sufficiently long password", "role_name": "先得后陨",
+		}, nil)
+		registered.Body.Close()
+		clock.Advance(8*time.Hour - 2*time.Second)
+		dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+		dead.Body.Close()
+		started := traveller.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "before-death-right"})
+		started.Body.Close()
+		clock.Advance(2 * time.Second)
+		state := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+		if state["status"] != "pending_reincarnation" {
+			t.Fatalf("traveller status = %v, want pending_reincarnation", state["status"])
+		}
+		events := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+		claimAt, deathAt := int64(-1), int64(-1)
+		for _, raw := range events {
+			event := raw.(map[string]any)
+			switch event["message"] {
+			case "觅得机缘":
+				claimAt = int64(event["created_at"].(float64))
+			case "本世身死，等待转世":
+				deathAt = int64(event["created_at"].(float64))
+			}
+		}
+		if claimAt < 0 || deathAt < 0 || claimAt >= deathAt {
+			t.Fatalf("crossing/death event order = claim %d death %d events=%#v", claimAt, deathAt, events)
+		}
+	})
+
+	t.Run("death before crossing", func(t *testing.T) {
+		server, clock := newServer(t)
+		source := &testClient{baseURL: server.URL}
+		registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+			"account": "after-death-source", "password": "a sufficiently long password", "role_name": "同寿源",
+		}, nil)
+		registered.Body.Close()
+		traveller := &testClient{baseURL: server.URL}
+		registered = traveller.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+			"account": "after-death-traveller", "password": "a sufficiently long password", "role_name": "先陨后坐标",
+		}, nil)
+		registered.Body.Close()
+		clock.Advance(8*time.Hour - 500*time.Millisecond)
+		started := traveller.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "after-death-right"})
+		started.Body.Close()
+		clock.Advance(time.Second)
+		dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+		dead.Body.Close()
+		state := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+		if state["status"] != "pending_reincarnation" {
+			t.Fatalf("traveller status = %v, want pending_reincarnation", state["status"])
+		}
+		events := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+		if containsEventMessage(events, "觅得机缘") {
+			t.Fatalf("role claimed opportunity after its death: %#v", events)
+		}
+	})
+}
+
+func TestTrajectoryUsesStableOpportunityOrderAtSharedCoordinate(t *testing.T) {
+	server, clock := newServer(t)
+	for index := range 2 {
+		source := &testClient{baseURL: server.URL}
+		registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+			"account": fmt.Sprintf("shared-coordinate-source-%d", index), "password": "a sufficiently long password", "role_name": fmt.Sprintf("同点缘源%d", index),
+		}, nil)
+		registered.Body.Close()
+	}
+	clock.Advance(8 * time.Hour)
+	for index := range 2 {
+		source := &testClient{baseURL: server.URL}
+		login := source.request(t, http.MethodPost, "/api/v1/auth/login", map[string]any{
+			"account": fmt.Sprintf("shared-coordinate-source-%d", index), "password": "a sufficiently long password",
+		}, nil)
+		login.Body.Close()
+		dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+		dead.Body.Close()
+	}
+
+	finder := &testClient{baseURL: server.URL}
+	registered := finder.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "shared-coordinate-finder", "password": "a sufficiently long password", "role_name": "同点择缘",
+	}, nil)
+	registered.Body.Close()
+	move := finder.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "shared-coordinate-right"})
+	move.Body.Close()
+	clock.Advance(time.Second)
+	settled := finder.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	settled.Body.Close()
+	events := decode[map[string]any](t, finder.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	for _, raw := range events {
+		event := raw.(map[string]any)
+		if event["message"] == "觅得机缘" {
+			if event["data"].(map[string]any)["opportunity_id"] != "opportunity_3" {
+				t.Fatalf("shared-coordinate opportunity = %#v, want stable opportunity_3", event)
+			}
+			return
+		}
+	}
+	t.Fatalf("shared-coordinate opportunity was not claimed: %#v", events)
+}
+
+func TestTrajectoryOpportunityCompetitionUsesEarliestCrossingInsteadOfSettlementOrder(t *testing.T) {
+	server, clock := newServer(t)
+	source := &testClient{baseURL: server.URL}
+	registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "competition-source", "password": "a sufficiently long password", "role_name": "缘起",
+	}, nil)
+	registered.Body.Close()
+	clock.Advance(8 * time.Hour)
+	dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	dead.Body.Close()
+
+	early := &testClient{baseURL: server.URL}
+	registered = early.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "competition-early", "password": "a sufficiently long password", "role_name": "先至",
+	}, nil)
+	registered.Body.Close()
+	later := &testClient{baseURL: server.URL}
+	registered = later.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "competition-later", "password": "a sufficiently long password", "role_name": "后至",
+	}, nil)
+	registered.Body.Close()
+
+	started := early.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "competition-early-right"})
+	started.Body.Close()
+	clock.Advance(500 * time.Millisecond)
+	started = later.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "competition-later-right"})
+	started.Body.Close()
+	clock.Advance(1500 * time.Millisecond)
+
+	// Settle the later arrival first. The winner must still be the role whose
+	// trajectory crossed the opportunity first in world time.
+	settled := later.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	settled.Body.Close()
+	settled = early.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	settled.Body.Close()
+
+	earlyEvents := decode[map[string]any](t, early.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	laterEvents := decode[map[string]any](t, later.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	if !containsEventMessage(earlyEvents, "觅得机缘") {
+		t.Fatalf("earliest arrival did not claim opportunity: early=%#v later=%#v", earlyEvents, laterEvents)
+	}
+	if containsEventMessage(laterEvents, "觅得机缘") {
+		t.Fatalf("later arrival claimed opportunity because it settled first: early=%#v later=%#v", earlyEvents, laterEvents)
+	}
+}
+
+func TestTrajectoryCannotClaimOpportunityCreatedAfterItCrossedTheCoordinate(t *testing.T) {
+	server, clock := newServer(t)
+	source := &testClient{baseURL: server.URL}
+	registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "late-opportunity-source", "password": "a sufficiently long password", "role_name": "后生缘",
+	}, nil)
+	registered.Body.Close()
+	clock.Advance(8*time.Hour - 1500*time.Millisecond)
+
+	traveller := &testClient{baseURL: server.URL}
+	registered = traveller.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "late-opportunity-traveller", "password": "a sufficiently long password", "role_name": "缘前过客",
+	}, nil)
+	registered.Body.Close()
+	started := traveller.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "late-opportunity-right"})
+	started.Body.Close()
+	clock.Advance(2 * time.Second)
+
+	dead := decode[map[string]any](t, source.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	if dead["status"] != "pending_reincarnation" {
+		t.Fatalf("opportunity source status = %v, want pending_reincarnation", dead["status"])
+	}
+	state := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	if state["position"].(map[string]any)["x"] != float64(2) {
+		t.Fatalf("traveller position = %#v, want x=2", state["position"])
+	}
+	events := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	if containsEventMessage(events, "觅得机缘") {
+		t.Fatalf("trajectory claimed an opportunity created after the crossing: %#v", events)
+	}
+}
+
+func TestOpportunityAndUnsettledTrajectorySurviveRestartWithoutDuplicateClaim(t *testing.T) {
+	clock := biz.NewManualClock(time.UnixMilli(1_700_000_000_000))
+	store := &memoryDurableStore{}
+	service, err := biz.NewPersistentService(context.Background(), clock, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := httptest.NewServer(newHTTPHandler(service, worldservice.AuxiliaryHTTPOptions{}))
+	source := &testClient{baseURL: first.URL}
+	registered := source.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "restart-opportunity-source", "password": "a sufficiently long password", "role_name": "续缘源",
+	}, nil)
+	registered.Body.Close()
+	clock.Advance(8 * time.Hour)
+	dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	dead.Body.Close()
+
+	traveller := &testClient{baseURL: first.URL}
+	registered = traveller.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "restart-opportunity-traveller", "password": "a sufficiently long password", "role_name": "续缘客",
+	}, nil)
+	registered.Body.Close()
+	startedAt := clock.Now().UnixMilli()
+	moving := traveller.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "restart-opportunity-right"})
+	moving.Body.Close()
+	clock.Advance(500 * time.Millisecond)
+	first.Close()
+
+	restored, err := biz.NewPersistentService(context.Background(), clock, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := httptest.NewServer(newHTTPHandler(restored, worldservice.AuxiliaryHTTPOptions{}))
+	traveller.baseURL = second.URL
+	clock.Advance(500 * time.Millisecond)
+	settled := traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	settled.Body.Close()
+	events := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	claimCount := 0
+	for _, raw := range events {
+		event := raw.(map[string]any)
+		if event["message"] == "觅得机缘" {
+			claimCount++
+			if int64(event["created_at"].(float64)) != startedAt+time.Second.Milliseconds() {
+				t.Fatalf("restored trajectory claim time = %v, want %d", event["created_at"], startedAt+time.Second.Milliseconds())
+			}
+		}
+	}
+	if claimCount != 1 {
+		t.Fatalf("restored trajectory claim count = %d, want one: %#v", claimCount, events)
+	}
+	second.Close()
+
+	restoredAgain, err := biz.NewPersistentService(context.Background(), clock, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third := httptest.NewServer(newHTTPHandler(restoredAgain, worldservice.AuxiliaryHTTPOptions{}))
+	defer third.Close()
+	traveller.baseURL = third.URL
+	clock.Advance(time.Second)
+	settled = traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	settled.Body.Close()
+	events = decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
+	claimCount = 0
+	for _, raw := range events {
+		if raw.(map[string]any)["message"] == "觅得机缘" {
+			claimCount++
+		}
+	}
+	if claimCount != 1 {
+		t.Fatalf("claim duplicated after second restart: %#v", events)
+	}
+}
+
+func containsEventMessage(events []any, message string) bool {
+	for _, raw := range events {
+		if raw.(map[string]any)["message"] == message {
+			return true
+		}
+	}
+	return false
 }
