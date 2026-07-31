@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
@@ -38,7 +39,7 @@ func (service *AuthService) Register(ctx context.Context, request *worldv1.Regis
 	if err != nil {
 		return nil, mapError(err)
 	}
-	service.setSessionCookie(ctx, token, int((24*time.Hour).Seconds()))
+	service.setSessionCookie(ctx, token, int((24 * time.Hour).Seconds()))
 	return &worldv1.AuthResponse{State: RoleState(state)}, nil
 }
 
@@ -50,7 +51,7 @@ func (service *AuthService) Login(ctx context.Context, request *worldv1.LoginReq
 	if err != nil {
 		return nil, mapError(err)
 	}
-	service.setSessionCookie(ctx, token, int((24*time.Hour).Seconds()))
+	service.setSessionCookie(ctx, token, int((24 * time.Hour).Seconds()))
 	return &worldv1.AuthResponse{State: RoleState(state)}, nil
 }
 
@@ -66,10 +67,16 @@ func (service *AuthService) Logout(ctx context.Context, _ *worldv1.LogoutRequest
 	return &emptypb.Empty{}, nil
 }
 
-func (service *AuthService) RotateMCPKey(ctx context.Context, _ *worldv1.RotateMCPKeyRequest) (*worldv1.RotateMCPKeyResponse, error) {
+func (service *AuthService) RotateMCPKey(ctx context.Context, request *worldv1.RotateMCPKeyRequest) (*worldv1.RotateMCPKeyResponse, error) {
 	roleID, err := service.world.authenticate(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(request.ExpectedRoleId) == "" {
+		return nil, ErrorBadRequest("expected role id is required")
+	}
+	if request.ExpectedRoleId != roleID {
+		return nil, ErrorPreconditionFailed("browser role changed; refresh before rotating MCP key")
 	}
 	key, err := service.usecase.RotateMCPKey(ctx, roleID)
 	if err != nil {
@@ -78,10 +85,16 @@ func (service *AuthService) RotateMCPKey(ctx context.Context, _ *worldv1.RotateM
 	return &worldv1.RotateMCPKeyResponse{ApiKey: key}, nil
 }
 
-func (service *AuthService) RevokeMCPKey(ctx context.Context, _ *worldv1.RevokeMCPKeyRequest) (*emptypb.Empty, error) {
+func (service *AuthService) RevokeMCPKey(ctx context.Context, request *worldv1.RevokeMCPKeyRequest) (*emptypb.Empty, error) {
 	roleID, err := service.world.authenticate(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(request.ExpectedRoleId) == "" {
+		return nil, ErrorBadRequest("expected role id is required")
+	}
+	if request.ExpectedRoleId != roleID {
+		return nil, ErrorPreconditionFailed("browser role changed; refresh before revoking MCP key")
 	}
 	if err := service.usecase.RevokeMCPKey(ctx, roleID); err != nil {
 		return nil, mapError(err)

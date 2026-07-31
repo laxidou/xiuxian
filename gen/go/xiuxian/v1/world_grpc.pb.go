@@ -29,7 +29,6 @@ const (
 	WorldService_Stop_FullMethodName                    = "/xiuxian.v1.WorldService/Stop"
 	WorldService_TransferCultivation_FullMethodName     = "/xiuxian.v1.WorldService/TransferCultivation"
 	WorldService_SeizeCultivation_FullMethodName        = "/xiuxian.v1.WorldService/SeizeCultivation"
-	WorldService_Reincarnate_FullMethodName             = "/xiuxian.v1.WorldService/Reincarnate"
 	WorldService_ListRecentEvents_FullMethodName        = "/xiuxian.v1.WorldService/ListRecentEvents"
 	WorldService_ListConversations_FullMethodName       = "/xiuxian.v1.WorldService/ListConversations"
 	WorldService_RequestConversation_FullMethodName     = "/xiuxian.v1.WorldService/RequestConversation"
@@ -51,7 +50,6 @@ type WorldServiceClient interface {
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*RoleState, error)
 	TransferCultivation(ctx context.Context, in *TransferCultivationRequest, opts ...grpc.CallOption) (*RoleState, error)
 	SeizeCultivation(ctx context.Context, in *SeizeCultivationRequest, opts ...grpc.CallOption) (*RoleState, error)
-	Reincarnate(ctx context.Context, in *ReincarnateRequest, opts ...grpc.CallOption) (*RoleState, error)
 	ListRecentEvents(ctx context.Context, in *ListRecentEventsRequest, opts ...grpc.CallOption) (*ListRecentEventsResponse, error)
 	ListConversations(ctx context.Context, in *ListConversationsRequest, opts ...grpc.CallOption) (*ListConversationsResponse, error)
 	RequestConversation(ctx context.Context, in *RequestConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
@@ -158,16 +156,6 @@ func (c *worldServiceClient) SeizeCultivation(ctx context.Context, in *SeizeCult
 	return out, nil
 }
 
-func (c *worldServiceClient) Reincarnate(ctx context.Context, in *ReincarnateRequest, opts ...grpc.CallOption) (*RoleState, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RoleState)
-	err := c.cc.Invoke(ctx, WorldService_Reincarnate_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *worldServiceClient) ListRecentEvents(ctx context.Context, in *ListRecentEventsRequest, opts ...grpc.CallOption) (*ListRecentEventsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRecentEventsResponse)
@@ -241,7 +229,6 @@ type WorldServiceServer interface {
 	Stop(context.Context, *StopRequest) (*RoleState, error)
 	TransferCultivation(context.Context, *TransferCultivationRequest) (*RoleState, error)
 	SeizeCultivation(context.Context, *SeizeCultivationRequest) (*RoleState, error)
-	Reincarnate(context.Context, *ReincarnateRequest) (*RoleState, error)
 	ListRecentEvents(context.Context, *ListRecentEventsRequest) (*ListRecentEventsResponse, error)
 	ListConversations(context.Context, *ListConversationsRequest) (*ListConversationsResponse, error)
 	RequestConversation(context.Context, *RequestConversationRequest) (*Conversation, error)
@@ -284,9 +271,6 @@ func (UnimplementedWorldServiceServer) TransferCultivation(context.Context, *Tra
 }
 func (UnimplementedWorldServiceServer) SeizeCultivation(context.Context, *SeizeCultivationRequest) (*RoleState, error) {
 	return nil, status.Error(codes.Unimplemented, "method SeizeCultivation not implemented")
-}
-func (UnimplementedWorldServiceServer) Reincarnate(context.Context, *ReincarnateRequest) (*RoleState, error) {
-	return nil, status.Error(codes.Unimplemented, "method Reincarnate not implemented")
 }
 func (UnimplementedWorldServiceServer) ListRecentEvents(context.Context, *ListRecentEventsRequest) (*ListRecentEventsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRecentEvents not implemented")
@@ -489,24 +473,6 @@ func _WorldService_SeizeCultivation_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _WorldService_Reincarnate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReincarnateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WorldServiceServer).Reincarnate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WorldService_Reincarnate_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WorldServiceServer).Reincarnate(ctx, req.(*ReincarnateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _WorldService_ListRecentEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListRecentEventsRequest)
 	if err := dec(in); err != nil {
@@ -657,10 +623,6 @@ var WorldService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SeizeCultivation",
 			Handler:    _WorldService_SeizeCultivation_Handler,
-		},
-		{
-			MethodName: "Reincarnate",
-			Handler:    _WorldService_Reincarnate_Handler,
 		},
 		{
 			MethodName: "ListRecentEvents",

@@ -341,6 +341,14 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "expectedRoleId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
         "tags": [
           "AuthService"
         ]
@@ -471,38 +479,6 @@
         ],
         "tags": [
           "AuthService"
-        ]
-      }
-    },
-    "/reincarnations": {
-      "post": {
-        "operationId": "WorldService_Reincarnate",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1RoleState"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1ReincarnateRequest"
-            }
-          }
-        ],
-        "tags": [
-          "WorldService"
         ]
       }
     },
@@ -952,28 +928,6 @@
         }
       }
     },
-    "v1ReincarnateRequest": {
-      "type": "object",
-      "properties": {
-        "idempotencyKey": {
-          "type": "string"
-        },
-        "position": {
-          "$ref": "#/definitions/v1Position"
-        },
-        "random": {
-          "type": "boolean"
-        },
-        "expectedLifeNumber": {
-          "type": "string",
-          "format": "int64"
-        },
-        "expectedStateVersion": {
-          "type": "string",
-          "format": "int64"
-        }
-      }
-    },
     "v1RequestConversationRequest": {
       "type": "object",
       "properties": {
@@ -1089,7 +1043,12 @@
       }
     },
     "v1RotateMCPKeyRequest": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "expectedRoleId": {
+          "type": "string"
+        }
+      }
     },
     "v1RotateMCPKeyResponse": {
       "type": "object",

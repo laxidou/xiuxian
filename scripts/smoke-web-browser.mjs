@@ -262,17 +262,6 @@ class RoleClient {
     throw new Error('helper did not receive conversation message')
   }
 
-  async reincarnateIfNeeded() {
-    const state = await this.refresh()
-    if (state.status !== 'pending_reincarnation') return
-    this.state = await this.request('POST', '/reincarnations', {
-      random: false,
-      position: { xMilliunits: '0', yMilliunits: '0' },
-      idempotencyKey: `browser-helper-rebirth-${state.lifeNumber}`,
-      expectedLifeNumber: state.lifeNumber,
-      expectedStateVersion: state.stateVersion,
-    })
-  }
 }
 
 async function runJourney(cdp, viewport, suffix, helper) {
@@ -474,7 +463,7 @@ async function runJourney(cdp, viewport, suffix, helper) {
     const statePayload = JSON.parse(state.body.result?.content?.[0]?.text ?? '{}')
     return initialized.status === 200 && initialized.body.result?.instructions?.includes('get_game_rules') &&
       toolNames.includes('get_game_rules') && toolNames.includes('move_direction') &&
-      rulePayload.rule_version === 3 && statePayload.name === ${quote(roleName)}
+      rulePayload.rule_version === 4 && statePayload.name === ${quote(roleName)}
   })()`)
   if (!apiKey.startsWith('xiu_') || !mcpVerified) throw new Error('documented MCP connection flow failed')
   await delay(1_100)
@@ -486,9 +475,7 @@ async function runJourney(cdp, viewport, suffix, helper) {
   const advanced = await cdp.evaluate(`fetch('/test/clock/advance?milliseconds=28800000', { method: 'POST' }).then((response) => response.status)`)
   if (advanced !== 200) throw new Error(`test clock status = ${advanced}`)
   await clickText(cdp, '刷新')
-  await waitFor(cdp, `document.body.innerText.includes('本世已终，等待转世') && document.body.innerText.includes('转世')`, 'pending reincarnation')
-  await clickText(cdp, '随机转世')
-  await waitFor(cdp, `document.body.innerText.includes('第 2 世')`, 'second life')
+  await waitFor(cdp, `document.body.innerText.includes('第 2 世')`, 'automatic second life')
 }
 
 let cdp
@@ -505,7 +492,6 @@ try {
   const helper = new RoleClient(baseURL)
   await helper.register('目标')
   await runJourney(cdp, { width: 1280, height: 900, mobile: false }, '桌面', helper)
-  await helper.reincarnateIfNeeded()
   await runJourney(cdp, { width: 390, height: 844, mobile: true }, '移动', helper)
   process.stdout.write('browser smoke passed at desktop and mobile widths\n')
 } finally {

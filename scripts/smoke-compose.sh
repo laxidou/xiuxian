@@ -64,14 +64,14 @@ state_version=$(jq -er '.state.stateVersion' "$response_file")
 curl -fsS -b "$cookie_jar" "$base_url/state" |
   jq -e --arg role_id "$role_id" '.id == $role_id and .lifeNumber == "1"' >/dev/null
 
-jq -n '{}' |
+jq -n --arg role_id "$role_id" '{expectedRoleId: $role_id}' |
   curl -fsS -b "$cookie_jar" -H 'Content-Type: application/json' --data-binary @- \
     "$base_url/mcp-key-rotations" >"$response_file"
 api_key=$(jq -er '.apiKey | select(startswith("xiu_"))' "$response_file")
 
 jq -n '{jsonrpc:"2.0", id:1, method:"tools/call", params:{name:"get_game_rules", arguments:{}}}' |
   curl -fsS -H "Authorization: Bearer $api_key" -H 'Content-Type: application/json' --data-binary @- "$base_url/mcp" |
-  jq -e '.result.isError == false and (.result.content[0].text | fromjson | .rule_version == 3)' >/dev/null
+  jq -e '.result.isError == false and (.result.content[0].text | fromjson | .rule_version == 4)' >/dev/null
 
 jq -n '{jsonrpc:"2.0", id:2, method:"tools/call", params:{name:"get_state", arguments:{}}}' |
   curl -fsS -H "Authorization: Bearer $api_key" -H 'Content-Type: application/json' --data-binary @- "$base_url/mcp" |

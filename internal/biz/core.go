@@ -474,13 +474,13 @@ func (s *Service) SettleDeadline(ctx context.Context, roleID string, expectedVer
 	if role.StateVersion != expectedVersion || role.Status != RoleAlive {
 		return false, nil
 	}
-	before := role.Status
+	beforeLifeNumber := role.LifeNumber
 	now := s.authoritativeNowLocked(ctx, role)
 	s.stateLocked(role, now)
 	if err := s.persistLocked(ctx); err != nil {
 		return false, err
 	}
-	return before == RoleAlive && role.Status == RolePendingReincarnation, nil
+	return role.LifeNumber > beforeLifeNumber, nil
 }
 
 func (s *Service) Move(ctx context.Context, roleID, idempotencyKey string, target rules.Position, expectation CommandExpectation) (State, error) {
@@ -777,6 +777,9 @@ func (s *Service) Seize(ctx context.Context, roleID, targetID, idempotencyKey st
 	s.settleOpportunityLocked(attacker, now)
 	s.settleOpportunityLocked(target, now)
 	taken := s.cultivationLocked(target, now)
+	if taken <= 0 {
+		return State{}, ErrTargetIneligible
+	}
 	attacker.CultivationBase = s.cultivationLocked(attacker, now) + taken
 	attacker.CultivationAt = now
 	s.rebaseTrajectoryLocked(attacker, positionOfState(attackerState), now, attacker.CultivationBase)
@@ -1030,65 +1033,6 @@ func (s *Service) Bounds(ctx context.Context) (Bounds, error) {
 	return Bounds{MinX: s.minX.Units(), MaxX: s.maxX.Units(), MinY: s.minY.Units(), MaxY: s.maxY.Units()}, nil
 }
 
-func (s *Service) Reincarnate(ctx context.Context, roleID, idempotencyKey string, position *rules.Position, expectation CommandExpectation) (State, error) {
-	if strings.TrimSpace(idempotencyKey) == "" {
-		return State{}, ErrIdempotencyKey
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if previous, ok := s.idempotencyResultLocked(roleID, idempotencyKey); ok {
-		return previous, nil
-	}
-	role, ok := s.roles[roleID]
-	if !ok {
-		return State{}, ErrUnauthenticated
-	}
-	if err := validateCommandExpectation(role, expectation); err != nil {
-		return State{}, err
-	}
-	now := s.authoritativeNowLocked(ctx, role)
-	s.stateLocked(role, now)
-	if role.Status != RolePendingReincarnation {
-		return State{}, ErrForbidden
-	}
-	chosen := rules.Position{}
-	if position != nil {
-		chosen = *position
-		if chosen.X < s.minX || chosen.X > s.maxX || chosen.Y < s.minY || chosen.Y > s.maxY {
-			return State{}, ErrInvalid
-		}
-	} else {
-		var err error
-		chosen.X, err = randomCoordinate(s.minX, s.maxX)
-		if err != nil {
-			return State{}, err
-		}
-		chosen.Y, err = randomCoordinate(s.minY, s.maxY)
-		if err != nil {
-			return State{}, err
-		}
-	}
-	role.LifeNumber++
-	role.Status = RoleAlive
-	role.LifeStartedAt = now
-	role.CultivationAt = now
-	role.CultivationBase = 0
-	role.LastSettledAt = now
-	role.NextDeathAt = now.Add(rules.NextNaturalDeathAfter(0, 0))
-	role.Position = chosen
-	role.Trajectory = nil
-	role.TrajectoryCultivation = 0
-	role.StateVersion++
-	s.expandBoundsLocked(chosen)
-	s.appendEventLocked(role, now, "reincarnation", "完成转世", nil)
-	result := s.stateLocked(role, now)
-	s.rememberIdempotencyLocked(roleID, idempotencyKey, result)
-	if err := s.persistLocked(ctx); err != nil {
-		return State{}, err
-	}
-	return result, nil
-}
-
 func (s *Service) authoritativeNowLocked(ctx context.Context, role *Role) time.Time {
 	now := s.clock.Now().UTC()
 	if databaseClock, ok := s.store.(authorityTimeStore); ok {
@@ -1125,6 +1069,11 @@ func (s *Service) cultivationLocked(role *Role, now time.Time) rules.Cultivation
 }
 
 func (s *Service) stateLocked(role *Role, now time.Time) State {
+	// Snapshots created before automatic reincarnation may still contain this
+	// legacy state. Finish the transition on the first authoritative read.
+	if role.Status == RolePendingReincarnation {
+		s.reincarnateLocked(role, now)
+	}
 	s.settleWorldTrajectoryOpportunityIntersectionsLocked(now)
 	cultivation := s.cultivationLocked(role, now)
 	age := now.Sub(role.LifeStartedAt)
@@ -1165,10 +1114,13 @@ func (s *Service) stateLocked(role *Role, now time.Time) State {
 			deathPosition, _ = role.Trajectory.PositionAfterDistance(travelled)
 		}
 		s.killLocked(role, deathAt, deathCultivation, deathPosition, "lifespan", true)
-		cultivation = 0
-		age = 0
-		life = rules.DeriveLife(0, 0)
-		position = deathPosition
+		cultivation = s.cultivationLocked(role, now)
+		age = now.Sub(role.LifeStartedAt)
+		if age < 0 {
+			age = 0
+		}
+		life = rules.DeriveLife(cultivation, age)
+		position = role.Position
 		movementState = MovementIdle
 	}
 	if role.Status == RoleAlive {
@@ -1435,7 +1387,33 @@ func (s *Service) killLocked(role *Role, at time.Time, cultivation rules.Cultiva
 		s.placeOpportunityLocked(opportunity)
 		data["opportunity_created"] = true
 	}
-	s.appendEventLocked(role, at, "death", "本世身死，等待转世", data)
+	s.appendEventLocked(role, at, "death", "本世身死", data)
+	s.reincarnateLocked(role, at)
+}
+
+func (s *Service) reincarnateLocked(role *Role, at time.Time) {
+	if role.Status != RolePendingReincarnation {
+		return
+	}
+	chosen := rules.Position{X: s.minX, Y: s.minY}
+	if coordinate, err := randomCoordinate(s.minX, s.maxX); err == nil {
+		chosen.X = coordinate
+	}
+	if coordinate, err := randomCoordinate(s.minY, s.maxY); err == nil {
+		chosen.Y = coordinate
+	}
+	role.LifeNumber++
+	role.Status = RoleAlive
+	role.LifeStartedAt = at
+	role.CultivationAt = at
+	role.CultivationBase = 0
+	role.LastSettledAt = at
+	role.NextDeathAt = at.Add(rules.NextNaturalDeathAfter(0, 0))
+	role.Position = chosen
+	role.Trajectory = nil
+	role.TrajectoryCultivation = 0
+	role.StateVersion++
+	s.appendEventLocked(role, at, "reincarnation", "已在随机位置自动转世", nil)
 }
 
 func (s *Service) appendEventLocked(role *Role, at time.Time, eventType EventType, message string, data map[string]any) {

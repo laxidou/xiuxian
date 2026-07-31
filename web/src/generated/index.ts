@@ -25,7 +25,6 @@ export type { v1OpportunitySignal } from './models/v1OpportunitySignal';
 export type { v1Position } from './models/v1Position';
 export type { v1RealmRule } from './models/v1RealmRule';
 export type { v1RegisterRequest } from './models/v1RegisterRequest';
-export type { v1ReincarnateRequest } from './models/v1ReincarnateRequest';
 export type { v1RequestConversationRequest } from './models/v1RequestConversationRequest';
 export type { v1RespondConversationRequest } from './models/v1RespondConversationRequest';
 export type { v1RoleState } from './models/v1RoleState';

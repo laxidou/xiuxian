@@ -13,14 +13,20 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class AuthServiceService {
     /**
+     * @param expectedRoleId
      * @returns any A successful response.
      * @returns rpcStatus An unexpected error response.
      * @throws ApiError
      */
-    public static authServiceRevokeMcpKey(): CancelablePromise<any | rpcStatus> {
+    public static authServiceRevokeMcpKey(
+        expectedRoleId?: string,
+    ): CancelablePromise<any | rpcStatus> {
         return __request(OpenAPI, {
             method: 'DELETE',
             url: '/mcp-key',
+            query: {
+                'expectedRoleId': expectedRoleId,
+            },
         });
     }
     /**

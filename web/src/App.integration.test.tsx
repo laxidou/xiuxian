@@ -54,7 +54,6 @@ const apiMock = vi.hoisted(() => ({
   stop: vi.fn(),
   transfer: vi.fn(),
   seize: vi.fn(),
-  reincarnate: vi.fn(),
   requestConversation: vi.fn(async () => ({})),
   respondConversation: vi.fn(async () => ({})),
   sendMessage: vi.fn(async () => ({})),

@@ -17,7 +17,6 @@ function GameApp() {
   const [events, setEvents] = useState<WorldEvent[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [scan, setScan] = useState<ScanResult | null>(null)
-  const [bounds, setBounds] = useState({ min_x: 0, max_x: 0, min_y: 0, max_y: 0 })
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [health, setHealth] = useState<Health | null>(null)
@@ -59,10 +58,9 @@ function GameApp() {
     try {
       const current = await api.state()
       setState(current)
-      const [eventResult, conversationResult, boundsResult] = await Promise.all([api.events(), api.conversations(), api.bounds()])
+      const [eventResult, conversationResult] = await Promise.all([api.events(), api.conversations()])
       setEvents(eventResult.events)
       setConversations(conversationResult.conversations)
-      setBounds(boundsResult)
     } catch (reason) {
       if (!silent) setError(reason instanceof Error ? reason.message : '未知错误')
     }
@@ -165,7 +163,6 @@ function GameApp() {
 
   const clearRoleView = () => {
     setEvents([]); setConversations([]); setScan(null)
-    setBounds({ min_x: 0, max_x: 0, min_y: 0, max_y: 0 })
     setNotice(''); setError(''); setScanSchedule((value) => value + 1)
   }
 
@@ -190,7 +187,7 @@ function GameApp() {
         <div>
           <p className="eyebrow">单一连续世界 · 第 {state.life_number} 世</p>
           <h1>{state.name}</h1>
-          <p>{state.status === 'alive' ? `${state.realm}，正在世间` : '本世已终，等待转世'}</p>
+          <p>{state.status === 'alive' ? `${state.realm}，正在世间` : '本世已终，正在自动转世'}</p>
           <p className="service-status">世界权威：{health ? `${health.service} ${health.version} · 正常` : '连接中断'}</p>
         </div>
         <nav className="header-actions" aria-label="角色导航">
@@ -212,7 +209,7 @@ function GameApp() {
       </section>
 
       {state.status === 'pending_reincarnation' ? (
-        <Reincarnation bounds={bounds} onReborn={(next) => updateState(next)} run={run} />
+        <section className="panel rebirth"><h2>自动转世中</h2><p>世界权威正在随机选择新一世的位置。</p></section>
       ) : (
         <div className="columns">
           <section className="panel">
@@ -238,7 +235,7 @@ function GameApp() {
         <section className="panel">
           <h2>MCP 代理权限</h2>
           <p className="muted">Key 只显示一次。代理与 Web 使用同一角色、同一权威结算。</p>
-          <MCPKeys run={run} />
+          <MCPKeys roleID={state.id} run={run} />
         </section>
       </div>
 
@@ -334,7 +331,7 @@ async function copyText(value: string) {
   if (!copied) throw new Error('clipboard copy failed')
 }
 
-function MCPKeys({ run }: { run: Runner }) {
+function MCPKeys({ roleID, run }: { roleID: string; run: Runner }) {
   const [key, setKey] = useState('')
   const [copyStatus, setCopyStatus] = useState('')
   const endpoint = new URL('/mcp', window.location.origin).toString()
@@ -343,10 +340,10 @@ function MCPKeys({ run }: { run: Runner }) {
   const copy = (label: string, value: string) => void copyText(value).then(() => setCopyStatus(`${label}已复制`)).catch(() => setCopyStatus(`${label}复制失败，请手动选择`))
   const rotate = () => {
     setKey('')
-    void run(api.rotateMCPKey, '新 Key 已生成，旧 Key 已立即失效').then((result) => result && setKey(result.api_key))
+    void run(() => api.rotateMCPKey(roleID), '新 Key 已生成，旧 Key 已立即失效').then((result) => result && setKey(result.api_key))
   }
   return <div className="mcp-access">
-    <div className="button-row"><button onClick={rotate}>轮换 Key</button><button className="danger" onClick={() => void run(api.revokeMCPKey, 'Key 已撤销').then((result) => result && setKey(''))}>撤销 Key</button>{key && <button className="quiet" onClick={() => copy('Key', key)}>复制 Key</button>}</div>
+    <div className="button-row"><button onClick={rotate}>轮换 Key</button><button className="danger" onClick={() => void run(() => api.revokeMCPKey(roleID), 'Key 已撤销').then((result) => result && setKey(''))}>撤销 Key</button>{key && <button className="quiet" onClick={() => copy('Key', key)}>复制 Key</button>}</div>
     {key && <output className="secret">{key}</output>}
     <p className="muted" role="status">{copyStatus}</p>
     <details className="mcp-guide">
@@ -361,7 +358,7 @@ function MCPKeys({ run }: { run: Runner }) {
       <p>不同客户端的外层字段可能不同，必须保留 URL 和 <code>Authorization: Bearer ...</code>：</p>
       <pre>{config}</pre><button className="quiet" onClick={() => copy('配置', config)}>复制配置</button>
       <h3>代理可以做什么</h3>
-      <p><code>get_game_rules</code>、<code>get_state</code> 等只读工具用于观察；移动、交谈、传功、夺功和转世等变更工具必须使用最新的 <code>life_number</code> 与 <code>state_version</code>。每个角色的 MCP 工具调用预算为持续约 1 次/秒、短时最多突发 5 次；神识扫描还共享最快 1 秒成功一次的独立限制。</p>
+      <p><code>get_game_rules</code>、<code>get_state</code> 等只读工具用于观察；移动、交谈、传功和夺功等变更工具必须使用最新的 <code>life_number</code> 与 <code>state_version</code>。死亡后由世界权威自动随机转世。每个角色的 MCP 工具调用预算为持续约 1 次/秒、短时最多突发 5 次；神识扫描还共享最快 1 秒成功一次的独立限制。</p>
       <h3>安全与排障</h3>
       <ul>
         <li>不要把 Web 密码交给代理，也不要把 Key 写入 URL、源码、截图或公开日志。</li>
@@ -377,8 +374,6 @@ function MCPKeys({ run }: { run: Runner }) {
     </details>
   </div>
 }
-
-function Reincarnation({ bounds, onReborn, run }: { bounds: { min_x: number; max_x: number; min_y: number; max_y: number }; onReborn: (state?: RoleState) => void; run: Runner }) { const [x, setX] = useState(bounds.min_x); const [y, setY] = useState(bounds.min_y); return <section className="panel rebirth"><h2>转世</h2><p>可选范围：X [{bounds.min_x}, {bounds.max_x}]，Y [{bounds.min_y}, {bounds.max_y}]</p><form className="inline-form" onSubmit={(event) => { event.preventDefault(); void run(() => api.reincarnate({ x, y }), '新的一世开始了').then(onReborn) }}><label>X<input type="number" value={x} onChange={(e) => setX(e.target.valueAsNumber)} /></label><label>Y<input type="number" value={y} onChange={(e) => setY(e.target.valueAsNumber)} /></label><button>在此转世</button><button type="button" className="quiet" onClick={() => void run(() => api.reincarnate(), '随机转世完成').then(onReborn)}>随机转世</button></form></section> }
 
 function GameRulesPage() {
   const [guide, setGuide] = useState<GameRules | null>(null)

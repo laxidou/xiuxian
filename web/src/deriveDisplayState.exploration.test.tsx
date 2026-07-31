@@ -50,7 +50,6 @@ vi.mock('./api', () => {
       stop: vi.fn(async () => h.state),
       transfer: vi.fn(async () => h.state),
       seize: vi.fn(async () => h.state),
-      reincarnate: vi.fn(async () => h.state),
       requestConversation: vi.fn(async () => ({})),
       respondConversation: vi.fn(async () => ({})),
       sendMessage: vi.fn(async () => ({})),

@@ -39,7 +39,7 @@ func TestMCPListsToolsAndCallsAuthoritativeGameAPI(t *testing.T) {
 	listRequest.Header.Set("Authorization", "Bearer xiu_test")
 	listResponse := httptest.NewRecorder()
 	gateway.ServeHTTP(listResponse, listRequest)
-	if listResponse.Code != http.StatusOK || !bytes.Contains(listResponse.Body.Bytes(), []byte(`"get_game_rules"`)) || !bytes.Contains(listResponse.Body.Bytes(), []byte(`"get_state"`)) || !bytes.Contains(listResponse.Body.Bytes(), []byte(`"seize_cultivation"`)) || !bytes.Contains(listResponse.Body.Bytes(), []byte(`once per second`)) || !bytes.Contains(listResponse.Body.Bytes(), []byte(`distance of 1 world unit`)) {
+	if listResponse.Code != http.StatusOK || !bytes.Contains(listResponse.Body.Bytes(), []byte(`"get_game_rules"`)) || !bytes.Contains(listResponse.Body.Bytes(), []byte(`"get_state"`)) || !bytes.Contains(listResponse.Body.Bytes(), []byte(`"seize_cultivation"`)) || bytes.Contains(listResponse.Body.Bytes(), []byte(`"reincarnate"`)) || !bytes.Contains(listResponse.Body.Bytes(), []byte(`once per second`)) || !bytes.Contains(listResponse.Body.Bytes(), []byte(`distance of 1 world unit`)) {
 		t.Fatalf("tools/list response = %d %s", listResponse.Code, listResponse.Body.String())
 	}
 
@@ -74,7 +74,7 @@ func TestMCPProductionGatewayUsesGeneratedGRPCContract(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer "+key)
 	response := httptest.NewRecorder()
 	gateway.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`rule_version\":3`)) || !bytes.Contains(response.Body.Bytes(), []byte(`get_state`)) {
+	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`rule_version\":4`)) || !bytes.Contains(response.Body.Bytes(), []byte(`get_state`)) {
 		t.Fatalf("game rules MCP response = %d %s", response.Code, response.Body.String())
 	}
 

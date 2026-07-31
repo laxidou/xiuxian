@@ -60,7 +60,7 @@ func (c *testClient) request(t *testing.T, method, path string, body any, header
 	t.Helper()
 	originalPath := path
 	path, body, normalization := c.translateScenarioRequest(t, method, path, body, headers)
-	if path == "/session" || path == "/mcp-key" {
+	if path == "/session" || path == "/mcp-key" || strings.HasPrefix(path, "/mcp-key?") {
 		method = http.MethodDelete
 	}
 	var payload bytes.Buffer
@@ -152,18 +152,10 @@ func (c *testClient) translateScenarioRequest(t *testing.T, method, path string,
 		return "/cultivation-seizures", request, "state"
 	case path == "/api/v1/events":
 		return "/events?limit=100", nil, "events"
-	case path == "/api/v1/reincarnate":
-		request := command()
-		if random, _ := input["random"].(bool); random {
-			request["random"] = true
-		} else {
-			request["position"] = map[string]any{"xMilliunits": milliunits(input["x"]), "yMilliunits": milliunits(input["y"])}
-		}
-		return "/reincarnations", request, "state"
 	case path == "/api/v1/mcp-key/rotate":
-		return "/mcp-key-rotations", map[string]any{}, "api_key"
+		return "/mcp-key-rotations", map[string]any{"expectedRoleId": input["expected_role_id"]}, "api_key"
 	case path == "/api/v1/mcp-key/revoke":
-		return "/mcp-key", nil, "empty"
+		return "/mcp-key?expectedRoleId=" + fmt.Sprint(input["expected_role_id"]), nil, "empty"
 	case path == "/api/v1/conversations" && method == http.MethodGet:
 		return "/conversations", nil, "conversations"
 	case path == "/api/v1/conversations":
@@ -450,7 +442,7 @@ func TestPublicGameRulesMatchTheActiveAuthorityVersion(t *testing.T) {
 		t.Fatalf("game rules status = %d, want 200", response.StatusCode)
 	}
 	guide := decode[map[string]any](t, response)
-	if guide["ruleVersion"] != float64(3) || len(guide["sections"].([]any)) < 10 || len(guide["realms"].([]any)) != 32 {
+	if guide["ruleVersion"] != float64(4) || len(guide["sections"].([]any)) < 10 || len(guide["realms"].([]any)) != 32 {
 		t.Fatalf("public game rules = %#v", guide)
 	}
 	if !strings.Contains(fmt.Sprint(guide["aiRules"]), "get_state") || guide["canonicalUrl"] != "/rules" {
@@ -696,8 +688,11 @@ func TestDirectionalMovementEndsAtDeathAndTargetMovementReplacesIt(t *testing.T)
 	restarted.Body.Close()
 	clock.Advance(8 * time.Hour)
 	dead := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	if dead["status"] != "pending_reincarnation" || dead["movement_mode"] != "idle" || dead["movement_state"] != "idle" {
+	if dead["status"] != "alive" || dead["life_number"] != float64(2) || dead["movement_mode"] != "idle" || dead["movement_state"] != "idle" {
 		t.Fatalf("direction state after death = %#v", dead)
+	}
+	if dead["age_seconds"].(float64) <= 0 || dead["cultivation"].(float64) <= 0 {
+		t.Fatalf("late death settlement did not advance the automatic new life to the authoritative time: %#v", dead)
 	}
 }
 
@@ -772,7 +767,7 @@ func TestScanTransferAndSeizureShareAuthoritativeState(t *testing.T) {
 		t.Fatalf("seizer cultivation = %v, want 5", seizeState["cultivation"])
 	}
 	deadTarget := decode[map[string]any](t, low.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	if deadTarget["status"] != "pending_reincarnation" || deadTarget["cultivation"] != float64(0) {
+	if deadTarget["status"] != "alive" || deadTarget["life_number"] != float64(2) || deadTarget["cultivation"] != float64(0) {
 		t.Fatalf("seized target state = %#v", deadTarget)
 	}
 }
@@ -990,7 +985,7 @@ func TestConcurrentSeizureTransfersCultivationExactlyOnce(t *testing.T) {
 	first := decode[map[string]any](t, attackers[0].request(t, http.MethodGet, "/api/v1/state", nil, nil))
 	second := decode[map[string]any](t, attackers[1].request(t, http.MethodGet, "/api/v1/state", nil, nil))
 	deadTarget := decode[map[string]any](t, target.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	if first["cultivation"].(float64)+second["cultivation"].(float64) != 13 || deadTarget["cultivation"] != float64(0) || deadTarget["status"] != "pending_reincarnation" {
+	if first["cultivation"].(float64)+second["cultivation"].(float64) != 13 || deadTarget["cultivation"] != float64(0) || deadTarget["status"] != "alive" || deadTarget["life_number"] != float64(2) {
 		t.Fatalf("cultivation was not conserved: first=%#v second=%#v target=%#v", first, second, deadTarget)
 	}
 	events := decode[map[string]any](t, target.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
@@ -1040,7 +1035,7 @@ func TestSenseScanIntervalIsSharedByWebAndRoleAPIKey(t *testing.T) {
 	registered := decode[map[string]any](t, web.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"account": "shared-scan", "password": "a sufficiently long password", "role_name": "同观",
 	}, nil))
-	rotated := decode[map[string]any](t, web.request(t, http.MethodPost, "/api/v1/mcp-key/rotate", map[string]any{}, nil))
+	rotated := decode[map[string]any](t, web.request(t, http.MethodPost, "/api/v1/mcp-key/rotate", map[string]any{"expected_role_id": registered["id"]}, nil))
 	apiKey := rotated["api_key"].(string)
 	registered = decode[map[string]any](t, web.request(t, http.MethodGet, "/api/v1/state", nil, nil))
 
@@ -1080,7 +1075,7 @@ func TestSenseScanIntervalIsSharedByWebAndRoleAPIKey(t *testing.T) {
 	atBoundary.Body.Close()
 }
 
-func TestNaturalDeathCreatesHiddenOpportunityAndReincarnationIsIdempotent(t *testing.T) {
+func TestNaturalDeathCreatesHiddenOpportunityAndAutomaticallyReincarnates(t *testing.T) {
 	server, clock := newServer(t)
 	client := &testClient{baseURL: server.URL}
 	resp := client.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
@@ -1092,12 +1087,16 @@ func TestNaturalDeathCreatesHiddenOpportunityAndReincarnationIsIdempotent(t *tes
 	move.Body.Close()
 	clock.Advance(8 * time.Hour)
 	dead := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	if dead["status"] != "pending_reincarnation" || dead["cultivation"] != float64(0) || dead["life_number"] != float64(1) {
+	if dead["status"] != "alive" || dead["cultivation"] != float64(0) || dead["life_number"] != float64(2) || dead["id"] != original["id"] || dead["name"] != original["name"] {
 		t.Fatalf("death state = %#v", dead)
+	}
+	position := dead["position"].(map[string]any)
+	if position["x"].(float64) < 0 || position["x"].(float64) > 1 || position["y"] != float64(0) {
+		t.Fatalf("automatic reincarnation position = %#v, want current world bounds", position)
 	}
 
 	events := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
-	foundDeath := false
+	foundDeath, foundReincarnation := false, false
 	for _, raw := range events {
 		event := raw.(map[string]any)
 		if event["type"] == "death" {
@@ -1106,17 +1105,18 @@ func TestNaturalDeathCreatesHiddenOpportunityAndReincarnationIsIdempotent(t *tes
 				t.Fatal("death event leaked the opportunity position")
 			}
 		}
+		if event["type"] == "reincarnation" && event["life_number"] == float64(2) {
+			foundReincarnation = true
+		}
 	}
-	if !foundDeath {
-		t.Fatalf("events do not contain death: %#v", events)
+	if !foundDeath || !foundReincarnation {
+		t.Fatalf("events do not contain the automatic death/reincarnation pair: %#v", events)
 	}
-
-	body := map[string]any{"x": 1, "y": 0}
-	reborn := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/reincarnate", body, map[string]string{"Idempotency-Key": "rebirth-1"}))
-	retry := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/reincarnate", body, map[string]string{"Idempotency-Key": "rebirth-1"}))
-	if reborn["life_number"] != float64(2) || retry["life_number"] != float64(2) || reborn["id"] != original["id"] || reborn["name"] != original["name"] {
-		t.Fatalf("reincarnation changed identity or incremented twice: first=%#v retry=%#v", reborn, retry)
+	manual := client.request(t, http.MethodPost, "/reincarnations", map[string]any{"random": true}, nil)
+	if manual.StatusCode != http.StatusNotFound {
+		t.Fatalf("removed manual reincarnation endpoint status = %d, want 404", manual.StatusCode)
 	}
+	manual.Body.Close()
 }
 
 func TestOldLifeCommandCannotAffectReincarnatedRole(t *testing.T) {
@@ -1126,16 +1126,10 @@ func TestOldLifeCommandCannotAffectReincarnatedRole(t *testing.T) {
 		"account": "late-command", "password": "a sufficiently long password", "role_name": "隔世者",
 	}, nil))
 	clock.Advance(8 * time.Hour)
-	dead := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 0, "y": 0}, map[string]string{
-		"Idempotency-Key":          "reborn-before-late-command",
-		"X-Expected-Life-Number":   fmt.Sprint(dead["life_number"]),
-		"X-Expected-State-Version": fmt.Sprint(dead["state_version"]),
-	})
-	if reborn.StatusCode != http.StatusOK {
-		t.Fatalf("reincarnate status = %d", reborn.StatusCode)
+	rebornState := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	if rebornState["life_number"] != float64(2) || rebornState["status"] != "alive" {
+		t.Fatalf("automatic reincarnation state = %#v", rebornState)
 	}
-	rebornState := decode[map[string]any](t, reborn)
 
 	delayed := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 10, "y": 0}, map[string]string{
 		"Idempotency-Key":          "delayed-first-life-move",
@@ -1157,12 +1151,11 @@ func TestOldLifeCommandCannotAffectReincarnatedRole(t *testing.T) {
 func TestMCPKeyIsRoleScopedRotatableAndImmediatelyRevocable(t *testing.T) {
 	server, _ := newServer(t)
 	web := &testClient{baseURL: server.URL}
-	registered := web.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+	registered := decode[map[string]any](t, web.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
 		"account": "agent-owner", "password": "a sufficiently long password", "role_name": "机关心",
-	}, nil)
-	registered.Body.Close()
+	}, nil))
 
-	rotated := web.request(t, http.MethodPost, "/api/v1/mcp-key/rotate", map[string]any{}, nil)
+	rotated := web.request(t, http.MethodPost, "/api/v1/mcp-key/rotate", map[string]any{"expected_role_id": registered["id"]}, nil)
 	if rotated.StatusCode != http.StatusOK {
 		t.Fatalf("rotate status = %d", rotated.StatusCode)
 	}
@@ -1179,7 +1172,7 @@ func TestMCPKeyIsRoleScopedRotatableAndImmediatelyRevocable(t *testing.T) {
 	}
 	state.Body.Close()
 
-	revoke := web.request(t, http.MethodPost, "/api/v1/mcp-key/revoke", map[string]any{}, nil)
+	revoke := web.request(t, http.MethodPost, "/api/v1/mcp-key/revoke", map[string]any{"expected_role_id": registered["id"]}, nil)
 	if revoke.StatusCode != http.StatusNoContent {
 		t.Fatalf("revoke status = %d", revoke.StatusCode)
 	}
@@ -1189,6 +1182,59 @@ func TestMCPKeyIsRoleScopedRotatableAndImmediatelyRevocable(t *testing.T) {
 		t.Fatalf("revoked key status = %d, want 401", denied.StatusCode)
 	}
 	denied.Body.Close()
+}
+
+func TestMCPKeyChangesRejectAStaleBrowserRole(t *testing.T) {
+	server, _ := newServer(t)
+	guoBrowser := &testClient{baseURL: server.URL}
+	guo := decode[map[string]any](t, guoBrowser.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "guo-jingming", "password": "a sufficiently long password", "role_name": "郭敬明",
+	}, nil))
+	guoRotation := decode[map[string]any](t, guoBrowser.request(t, http.MethodPost, "/mcp-key-rotations", map[string]any{
+		"expectedRoleId": guo["id"],
+	}, nil))
+	guoKey := guoRotation["apiKey"].(string)
+
+	wangBrowser := &testClient{baseURL: server.URL}
+	wang := decode[map[string]any](t, wangBrowser.request(t, http.MethodPost, "/api/v1/auth/register", map[string]any{
+		"account": "wang-junkai", "password": "another sufficiently long password", "role_name": "王俊凯",
+	}, nil))
+	wangRotation := decode[map[string]any](t, wangBrowser.request(t, http.MethodPost, "/mcp-key-rotations", map[string]any{
+		"expectedRoleId": wang["id"],
+	}, nil))
+	wangKey := wangRotation["apiKey"].(string)
+
+	// Browser cookies are origin-wide. This simulates an old 郭敬明 tab after
+	// another tab logged in as 王俊凯: the request carries 王俊凯's current
+	// cookie but still declares the role shown in the old tab.
+	staleRotation := wangBrowser.request(t, http.MethodPost, "/mcp-key-rotations", map[string]any{
+		"expectedRoleId": guo["id"],
+	}, nil)
+	if staleRotation.StatusCode != http.StatusConflict {
+		t.Fatalf("stale-tab rotation status = %d, want 409", staleRotation.StatusCode)
+	}
+	staleRotation.Body.Close()
+	staleRevoke := wangBrowser.request(t, http.MethodDelete, "/mcp-key?expectedRoleId="+fmt.Sprint(guo["id"]), nil, nil)
+	if staleRevoke.StatusCode != http.StatusConflict {
+		t.Fatalf("stale-tab revocation status = %d, want 409", staleRevoke.StatusCode)
+	}
+	staleRevoke.Body.Close()
+
+	for name, identity := range map[string]struct {
+		key    string
+		roleID any
+	}{
+		"郭敬明": {key: guoKey, roleID: guo["id"]},
+		"王俊凯": {key: wangKey, roleID: wang["id"]},
+	} {
+		agent := &testClient{baseURL: server.URL}
+		state := decode[map[string]any](t, agent.request(t, http.MethodGet, "/state", nil, map[string]string{
+			"Authorization": "Bearer " + identity.key,
+		}))
+		if state["id"] != identity.roleID {
+			t.Fatalf("%s key authenticated role %v, want %v", name, state["id"], identity.roleID)
+		}
+	}
 }
 
 func TestAcknowledgedStateSurvivesAuthorityRestart(t *testing.T) {
@@ -1341,10 +1387,11 @@ func TestOpportunityClaimsAtExactCoordinateAndConvertsLinearly(t *testing.T) {
 	}, nil)
 	registered.Body.Close()
 	clock.Advance(8 * time.Hour)
-	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
-	dead.Body.Close()
-	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "second-life"})
-	reborn.Body.Close()
+	reborn := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	travel := time.Duration(math.Ceil(math.Abs(1-reborn["position"].(map[string]any)["x"].(float64))*1000)) * time.Millisecond
+	moving := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "second-life-opportunity"})
+	moving.Body.Close()
+	clock.Advance(travel)
 	claimed := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
 	claimed.Body.Close()
 	events := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
@@ -1360,7 +1407,7 @@ func TestOpportunityClaimsAtExactCoordinateAndConvertsLinearly(t *testing.T) {
 
 	clock.Advance(6 * time.Hour)
 	state := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	want := 480.0
+	want := 480.0 + travel.Minutes()
 	if math.Abs(state["cultivation"].(float64)-want) > 0.000001 {
 		t.Fatalf("cultivation after 6h natural + quarter opportunity = %v, want %v", state["cultivation"], want)
 	}
@@ -1380,13 +1427,13 @@ func TestInitialWorldPlacesOriginDeathOpportunityAtIntegerCoordinate(t *testing.
 	}
 
 	clock.Advance(8 * time.Hour)
-	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
-	dead.Body.Close()
-	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "integer-rebirth"})
-	if reborn.StatusCode != http.StatusOK {
-		t.Fatalf("integer-coordinate reincarnation status = %d, want 200", reborn.StatusCode)
-	}
-	reborn.Body.Close()
+	reborn := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
+	travel := time.Duration(math.Ceil(math.Abs(1-reborn["position"].(map[string]any)["x"].(float64))*1000)) * time.Millisecond
+	moving := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 1, "y": 0}, map[string]string{"Idempotency-Key": "integer-opportunity"})
+	moving.Body.Close()
+	clock.Advance(travel)
+	settled := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
+	settled.Body.Close()
 
 	events := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
 	found := false
@@ -1485,16 +1532,15 @@ func TestDirectionalTrajectoryClaimsOpportunityAtCrossingTime(t *testing.T) {
 	registered.Body.Close()
 
 	clock.Advance(8 * time.Hour)
-	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
-	dead.Body.Close()
-	reborn := decode[map[string]any](t, client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 0, "y": 0}, map[string]string{"Idempotency-Key": "trajectory-rebirth"}))
+	reborn := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
 	rebornAt := clock.Now().UnixMilli()
+	startX := reborn["position"].(map[string]any)["x"].(float64)
 	started := client.request(t, http.MethodPost, "/api/v1/movement/direction", map[string]any{"direction": "right", "speed": 1}, map[string]string{"Idempotency-Key": "trajectory-right"})
 	started.Body.Close()
 
 	clock.Advance(2 * time.Second)
 	state := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	if state["position"].(map[string]any)["x"] != float64(2) || reborn["position"].(map[string]any)["x"] != float64(0) {
+	if math.Abs(state["position"].(map[string]any)["x"].(float64)-(startX+2)) > 0.000001 {
 		t.Fatalf("trajectory states = reborn %#v current %#v", reborn, state)
 	}
 
@@ -1502,8 +1548,9 @@ func TestDirectionalTrajectoryClaimsOpportunityAtCrossingTime(t *testing.T) {
 	for _, raw := range events {
 		event := raw.(map[string]any)
 		if event["message"] == "觅得机缘" {
-			if int64(event["created_at"].(float64)) != rebornAt+time.Second.Milliseconds() {
-				t.Fatalf("opportunity claimed at %v, want crossing time %v", event["created_at"], rebornAt+time.Second.Milliseconds())
+			wantClaimAt := rebornAt + int64(math.Round((1-startX)*1000))
+			if int64(event["created_at"].(float64)) != wantClaimAt {
+				t.Fatalf("opportunity claimed at %v, want crossing time %v", event["created_at"], wantClaimAt)
 			}
 			return
 		}
@@ -1519,11 +1566,9 @@ func TestTargetTrajectoryClaimsOpportunityAtCrossingTime(t *testing.T) {
 	}, nil)
 	registered.Body.Close()
 	clock.Advance(8 * time.Hour)
-	dead := client.request(t, http.MethodGet, "/api/v1/state", nil, nil)
-	dead.Body.Close()
-	reborn := client.request(t, http.MethodPost, "/api/v1/reincarnate", map[string]any{"x": 0, "y": 0}, map[string]string{"Idempotency-Key": "target-trajectory-rebirth"})
-	reborn.Body.Close()
+	reborn := decode[map[string]any](t, client.request(t, http.MethodGet, "/api/v1/state", nil, nil))
 	rebornAt := clock.Now().UnixMilli()
+	startX := reborn["position"].(map[string]any)["x"].(float64)
 	started := client.request(t, http.MethodPost, "/api/v1/movement/move", map[string]any{"x": 2, "y": 0}, map[string]string{"Idempotency-Key": "target-trajectory-move"})
 	started.Body.Close()
 
@@ -1534,8 +1579,9 @@ func TestTargetTrajectoryClaimsOpportunityAtCrossingTime(t *testing.T) {
 	for _, raw := range events {
 		event := raw.(map[string]any)
 		if event["message"] == "觅得机缘" {
-			if int64(event["created_at"].(float64)) != rebornAt+time.Second.Milliseconds() {
-				t.Fatalf("opportunity claimed at %v, want crossing time %v", event["created_at"], rebornAt+time.Second.Milliseconds())
+			wantClaimAt := rebornAt + int64(math.Round((1-startX)*1000))
+			if int64(event["created_at"].(float64)) != wantClaimAt {
+				t.Fatalf("opportunity claimed at %v, want crossing time %v", event["created_at"], wantClaimAt)
 			}
 			return
 		}
@@ -1591,8 +1637,8 @@ func TestTrajectoryOpportunitySettlementOrdersCrossingAndNaturalDeath(t *testing
 		started.Body.Close()
 		clock.Advance(2 * time.Second)
 		state := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-		if state["status"] != "pending_reincarnation" {
-			t.Fatalf("traveller status = %v, want pending_reincarnation", state["status"])
+		if state["status"] != "alive" || state["life_number"] != float64(2) {
+			t.Fatalf("traveller was not automatically reincarnated: %#v", state)
 		}
 		events := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
 		claimAt, deathAt := int64(-1), int64(-1)
@@ -1601,7 +1647,7 @@ func TestTrajectoryOpportunitySettlementOrdersCrossingAndNaturalDeath(t *testing
 			switch event["message"] {
 			case "觅得机缘":
 				claimAt = int64(event["created_at"].(float64))
-			case "本世身死，等待转世":
+			case "本世身死":
 				deathAt = int64(event["created_at"].(float64))
 			}
 		}
@@ -1629,8 +1675,8 @@ func TestTrajectoryOpportunitySettlementOrdersCrossingAndNaturalDeath(t *testing
 		dead := source.request(t, http.MethodGet, "/api/v1/state", nil, nil)
 		dead.Body.Close()
 		state := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-		if state["status"] != "pending_reincarnation" {
-			t.Fatalf("traveller status = %v, want pending_reincarnation", state["status"])
+		if state["status"] != "alive" || state["life_number"] != float64(2) {
+			t.Fatalf("traveller was not automatically reincarnated: %#v", state)
 		}
 		events := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/events", nil, nil))["events"].([]any)
 		if containsEventMessage(events, "觅得机缘") {
@@ -1747,8 +1793,8 @@ func TestTrajectoryCannotClaimOpportunityCreatedAfterItCrossedTheCoordinate(t *t
 	clock.Advance(2 * time.Second)
 
 	dead := decode[map[string]any](t, source.request(t, http.MethodGet, "/api/v1/state", nil, nil))
-	if dead["status"] != "pending_reincarnation" {
-		t.Fatalf("opportunity source status = %v, want pending_reincarnation", dead["status"])
+	if dead["status"] != "alive" || dead["life_number"] != float64(2) {
+		t.Fatalf("opportunity source was not automatically reincarnated: %#v", dead)
 	}
 	state := decode[map[string]any](t, traveller.request(t, http.MethodGet, "/api/v1/state", nil, nil))
 	if state["position"].(map[string]any)["x"] != float64(2) {

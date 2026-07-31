@@ -35,9 +35,6 @@ service WorldService {
   rpc SeizeCultivation(SeizeCultivationRequest) returns (RoleState) {
     option (google.api.http) = { post: "/cultivation-seizures" body: "*" };
   }
-  rpc Reincarnate(ReincarnateRequest) returns (RoleState) {
-    option (google.api.http) = { post: "/reincarnations" body: "*" };
-  }
   rpc ListRecentEvents(ListRecentEventsRequest) returns (ListRecentEventsResponse) {
     option (google.api.http) = { get: "/events" };
   }
@@ -88,8 +85,8 @@ message LoginRequest {
 }
 
 message LogoutRequest {}
-message RotateMCPKeyRequest {}
-message RevokeMCPKeyRequest {}
+message RotateMCPKeyRequest { string expected_role_id = 1; }
+message RevokeMCPKeyRequest { string expected_role_id = 1; }
 message AuthResponse { RoleState state = 1; }
 message RotateMCPKeyResponse { string api_key = 1; }
 
@@ -227,14 +224,6 @@ message SeizeCultivationRequest {
   string target_id = 2;
   int64 expected_life_number = 3;
   int64 expected_state_version = 4;
-}
-
-message ReincarnateRequest {
-  string idempotency_key = 1;
-  optional Position position = 2;
-  bool random = 3;
-  int64 expected_life_number = 4;
-  int64 expected_state_version = 5;
 }
 
 message ListRecentEventsRequest {

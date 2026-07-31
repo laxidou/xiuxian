@@ -11,7 +11,6 @@ import type { v1ListConversationsResponse } from '../models/v1ListConversationsR
 import type { v1ListRecentEventsResponse } from '../models/v1ListRecentEventsResponse';
 import type { v1MoveDirectionRequest } from '../models/v1MoveDirectionRequest';
 import type { v1MoveRequest } from '../models/v1MoveRequest';
-import type { v1ReincarnateRequest } from '../models/v1ReincarnateRequest';
 import type { v1RequestConversationRequest } from '../models/v1RequestConversationRequest';
 import type { v1RespondConversationRequest } from '../models/v1RespondConversationRequest';
 import type { v1RoleState } from '../models/v1RoleState';
@@ -200,21 +199,6 @@ export class WorldServiceService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/movements',
-            body: body,
-        });
-    }
-    /**
-     * @param body
-     * @returns v1RoleState A successful response.
-     * @returns rpcStatus An unexpected error response.
-     * @throws ApiError
-     */
-    public static worldServiceReincarnate(
-        body: v1ReincarnateRequest,
-    ): CancelablePromise<v1RoleState | rpcStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/reincarnations',
             body: body,
         });
     }

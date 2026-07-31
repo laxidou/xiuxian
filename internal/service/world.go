@@ -157,23 +157,6 @@ func (s *WorldService) SeizeCultivation(ctx context.Context, request *worldv1.Se
 	return RoleState(state), nil
 }
 
-func (s *WorldService) Reincarnate(ctx context.Context, request *worldv1.ReincarnateRequest) (*worldv1.RoleState, error) {
-	roleID, err := s.authenticate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var position *rules.Position
-	if !request.Random && request.Position != nil {
-		value := rules.Position{X: rules.Coordinate(request.Position.XMilliunits), Y: rules.Coordinate(request.Position.YMilliunits)}
-		position = &value
-	}
-	state, err := s.usecase.Reincarnate(ctx, roleID, request.IdempotencyKey, position, commandExpectation(request.ExpectedLifeNumber, request.ExpectedStateVersion))
-	if err != nil {
-		return nil, mapError(err)
-	}
-	return RoleState(state), nil
-}
-
 func (s *WorldService) ListRecentEvents(ctx context.Context, request *worldv1.ListRecentEventsRequest) (*worldv1.ListRecentEventsResponse, error) {
 	roleID, err := s.authenticate(ctx)
 	if err != nil {

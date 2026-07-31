@@ -215,19 +215,6 @@ func (g *gateway) callToolRPC(ctx context.Context, w http.ResponseWriter, reques
 		result, err = g.rpc.TransferCultivation(ctx, &worldv1.TransferCultivationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id"), AmountMinutes: amount, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
 	case "seize_cultivation":
 		result, err = g.rpc.SeizeCultivation(ctx, &worldv1.SeizeCultivationRequest{IdempotencyKey: key, TargetId: stringArgument(request.Params.Arguments, "target_id"), ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion})
-	case "reincarnate":
-		random, _ := request.Params.Arguments["random"].(bool)
-		reincarnate := &worldv1.ReincarnateRequest{IdempotencyKey: key, Random: random, ExpectedLifeNumber: expectedLifeNumber, ExpectedStateVersion: expectedStateVersion}
-		if !random {
-			x, xOK := numberArgument(request.Params.Arguments, "x")
-			y, yOK := numberArgument(request.Params.Arguments, "y")
-			if !xOK || !yOK {
-				writeRPCError(w, request.ID, -32602, "x and y are required unless random is true", http.StatusOK)
-				return
-			}
-			reincarnate.Position = &worldv1.Position{XMilliunits: int64(math.Round(x * 1000)), YMilliunits: int64(math.Round(y * 1000))}
-		}
-		result, err = g.rpc.Reincarnate(ctx, reincarnate)
 	default:
 		writeRPCError(w, request.ID, -32602, "unknown tool", http.StatusOK)
 		return
@@ -246,7 +233,7 @@ func (g *gateway) callToolRPC(ctx context.Context, w http.ResponseWriter, reques
 
 func toolRequiresExpectation(name string) bool {
 	switch name {
-	case "scan", "move", "move_direction", "stop", "request_conversation", "respond_conversation", "send_conversation_message", "close_conversation", "transfer_cultivation", "seize_cultivation", "reincarnate":
+	case "scan", "move", "move_direction", "stop", "request_conversation", "respond_conversation", "send_conversation_message", "close_conversation", "transfer_cultivation", "seize_cultivation":
 		return true
 	default:
 		return false
@@ -312,7 +299,6 @@ func tools() []tool {
 		{Name: "close_conversation", Description: "Close a conversation", InputSchema: object(map[string]any{"conversation_id": stringField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "conversation_id", "expected_life_number", "expected_state_version")},
 		{Name: "transfer_cultivation", Description: "Transfer positive whole cultivation minutes", InputSchema: object(map[string]any{"target_id": stringField, "amount_minutes": integerField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "target_id", "amount_minutes", "expected_life_number", "expected_state_version")},
 		{Name: "seize_cultivation", Description: "夺功 from a strictly lower-realm role within an inclusive authoritative distance of 1 world unit", InputSchema: object(map[string]any{"target_id": stringField, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "target_id", "expected_life_number", "expected_state_version")},
-		{Name: "reincarnate", Description: "Reincarnate at an in-bounds coordinate or randomly", InputSchema: object(map[string]any{"x": numberField, "y": numberField, "random": map[string]any{"type": "boolean"}, "idempotency_key": keyField, "expected_life_number": expectedLifeField, "expected_state_version": expectedVersionField}, "expected_life_number", "expected_state_version")},
 	}
 }
 

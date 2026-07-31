@@ -227,9 +227,10 @@ func (*LogoutRequest) Descriptor() ([]byte, []int) {
 }
 
 type RotateMCPKeyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ExpectedRoleId string                 `protobuf:"bytes,1,opt,name=expected_role_id,json=expectedRoleId,proto3" json:"expected_role_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RotateMCPKeyRequest) Reset() {
@@ -262,10 +263,18 @@ func (*RotateMCPKeyRequest) Descriptor() ([]byte, []int) {
 	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{3}
 }
 
+func (x *RotateMCPKeyRequest) GetExpectedRoleId() string {
+	if x != nil {
+		return x.ExpectedRoleId
+	}
+	return ""
+}
+
 type RevokeMCPKeyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ExpectedRoleId string                 `protobuf:"bytes,1,opt,name=expected_role_id,json=expectedRoleId,proto3" json:"expected_role_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RevokeMCPKeyRequest) Reset() {
@@ -296,6 +305,13 @@ func (x *RevokeMCPKeyRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RevokeMCPKeyRequest.ProtoReflect.Descriptor instead.
 func (*RevokeMCPKeyRequest) Descriptor() ([]byte, []int) {
 	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *RevokeMCPKeyRequest) GetExpectedRoleId() string {
+	if x != nil {
+		return x.ExpectedRoleId
+	}
+	return ""
 }
 
 type AuthResponse struct {
@@ -1674,82 +1690,6 @@ func (x *SeizeCultivationRequest) GetExpectedStateVersion() int64 {
 	return 0
 }
 
-type ReincarnateRequest struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey       string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	Position             *Position              `protobuf:"bytes,2,opt,name=position,proto3,oneof" json:"position,omitempty"`
-	Random               bool                   `protobuf:"varint,3,opt,name=random,proto3" json:"random,omitempty"`
-	ExpectedLifeNumber   int64                  `protobuf:"varint,4,opt,name=expected_life_number,json=expectedLifeNumber,proto3" json:"expected_life_number,omitempty"`
-	ExpectedStateVersion int64                  `protobuf:"varint,5,opt,name=expected_state_version,json=expectedStateVersion,proto3" json:"expected_state_version,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
-}
-
-func (x *ReincarnateRequest) Reset() {
-	*x = ReincarnateRequest{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[25]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReincarnateRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReincarnateRequest) ProtoMessage() {}
-
-func (x *ReincarnateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[25]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReincarnateRequest.ProtoReflect.Descriptor instead.
-func (*ReincarnateRequest) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{25}
-}
-
-func (x *ReincarnateRequest) GetIdempotencyKey() string {
-	if x != nil {
-		return x.IdempotencyKey
-	}
-	return ""
-}
-
-func (x *ReincarnateRequest) GetPosition() *Position {
-	if x != nil {
-		return x.Position
-	}
-	return nil
-}
-
-func (x *ReincarnateRequest) GetRandom() bool {
-	if x != nil {
-		return x.Random
-	}
-	return false
-}
-
-func (x *ReincarnateRequest) GetExpectedLifeNumber() int64 {
-	if x != nil {
-		return x.ExpectedLifeNumber
-	}
-	return 0
-}
-
-func (x *ReincarnateRequest) GetExpectedStateVersion() int64 {
-	if x != nil {
-		return x.ExpectedStateVersion
-	}
-	return 0
-}
-
 type ListRecentEventsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	After         int64                  `protobuf:"varint,1,opt,name=after,proto3" json:"after,omitempty"`
@@ -1760,7 +1700,7 @@ type ListRecentEventsRequest struct {
 
 func (x *ListRecentEventsRequest) Reset() {
 	*x = ListRecentEventsRequest{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[26]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1772,7 +1712,7 @@ func (x *ListRecentEventsRequest) String() string {
 func (*ListRecentEventsRequest) ProtoMessage() {}
 
 func (x *ListRecentEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[26]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1785,7 +1725,7 @@ func (x *ListRecentEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRecentEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListRecentEventsRequest) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{26}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListRecentEventsRequest) GetAfter() int64 {
@@ -1816,7 +1756,7 @@ type WorldEvent struct {
 
 func (x *WorldEvent) Reset() {
 	*x = WorldEvent{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[27]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1828,7 +1768,7 @@ func (x *WorldEvent) String() string {
 func (*WorldEvent) ProtoMessage() {}
 
 func (x *WorldEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[27]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1841,7 +1781,7 @@ func (x *WorldEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorldEvent.ProtoReflect.Descriptor instead.
 func (*WorldEvent) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{27}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *WorldEvent) GetId() int64 {
@@ -1895,7 +1835,7 @@ type ListRecentEventsResponse struct {
 
 func (x *ListRecentEventsResponse) Reset() {
 	*x = ListRecentEventsResponse{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[28]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1907,7 +1847,7 @@ func (x *ListRecentEventsResponse) String() string {
 func (*ListRecentEventsResponse) ProtoMessage() {}
 
 func (x *ListRecentEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[28]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1920,7 +1860,7 @@ func (x *ListRecentEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRecentEventsResponse.ProtoReflect.Descriptor instead.
 func (*ListRecentEventsResponse) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{28}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ListRecentEventsResponse) GetEvents() []*WorldEvent {
@@ -1938,7 +1878,7 @@ type ListConversationsRequest struct {
 
 func (x *ListConversationsRequest) Reset() {
 	*x = ListConversationsRequest{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[29]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1950,7 +1890,7 @@ func (x *ListConversationsRequest) String() string {
 func (*ListConversationsRequest) ProtoMessage() {}
 
 func (x *ListConversationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[29]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1963,7 +1903,7 @@ func (x *ListConversationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConversationsRequest.ProtoReflect.Descriptor instead.
 func (*ListConversationsRequest) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{29}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{28}
 }
 
 type ConversationMessage struct {
@@ -1979,7 +1919,7 @@ type ConversationMessage struct {
 
 func (x *ConversationMessage) Reset() {
 	*x = ConversationMessage{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[30]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1991,7 +1931,7 @@ func (x *ConversationMessage) String() string {
 func (*ConversationMessage) ProtoMessage() {}
 
 func (x *ConversationMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[30]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2004,7 +1944,7 @@ func (x *ConversationMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationMessage.ProtoReflect.Descriptor instead.
 func (*ConversationMessage) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{30}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ConversationMessage) GetId() int64 {
@@ -2057,7 +1997,7 @@ type Conversation struct {
 
 func (x *Conversation) Reset() {
 	*x = Conversation{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[31]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2069,7 +2009,7 @@ func (x *Conversation) String() string {
 func (*Conversation) ProtoMessage() {}
 
 func (x *Conversation) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[31]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2082,7 +2022,7 @@ func (x *Conversation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Conversation.ProtoReflect.Descriptor instead.
 func (*Conversation) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{31}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *Conversation) GetId() string {
@@ -2143,7 +2083,7 @@ type ListConversationsResponse struct {
 
 func (x *ListConversationsResponse) Reset() {
 	*x = ListConversationsResponse{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[32]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2155,7 +2095,7 @@ func (x *ListConversationsResponse) String() string {
 func (*ListConversationsResponse) ProtoMessage() {}
 
 func (x *ListConversationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[32]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2168,7 +2108,7 @@ func (x *ListConversationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConversationsResponse.ProtoReflect.Descriptor instead.
 func (*ListConversationsResponse) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{32}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ListConversationsResponse) GetConversations() []*Conversation {
@@ -2190,7 +2130,7 @@ type RequestConversationRequest struct {
 
 func (x *RequestConversationRequest) Reset() {
 	*x = RequestConversationRequest{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[33]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2202,7 +2142,7 @@ func (x *RequestConversationRequest) String() string {
 func (*RequestConversationRequest) ProtoMessage() {}
 
 func (x *RequestConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[33]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2215,7 +2155,7 @@ func (x *RequestConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestConversationRequest.ProtoReflect.Descriptor instead.
 func (*RequestConversationRequest) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{33}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RequestConversationRequest) GetIdempotencyKey() string {
@@ -2259,7 +2199,7 @@ type RespondConversationRequest struct {
 
 func (x *RespondConversationRequest) Reset() {
 	*x = RespondConversationRequest{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[34]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2271,7 +2211,7 @@ func (x *RespondConversationRequest) String() string {
 func (*RespondConversationRequest) ProtoMessage() {}
 
 func (x *RespondConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[34]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2284,7 +2224,7 @@ func (x *RespondConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RespondConversationRequest.ProtoReflect.Descriptor instead.
 func (*RespondConversationRequest) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{34}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RespondConversationRequest) GetIdempotencyKey() string {
@@ -2335,7 +2275,7 @@ type SendConversationMessageRequest struct {
 
 func (x *SendConversationMessageRequest) Reset() {
 	*x = SendConversationMessageRequest{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[35]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2347,7 +2287,7 @@ func (x *SendConversationMessageRequest) String() string {
 func (*SendConversationMessageRequest) ProtoMessage() {}
 
 func (x *SendConversationMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[35]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2360,7 +2300,7 @@ func (x *SendConversationMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendConversationMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendConversationMessageRequest) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{35}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *SendConversationMessageRequest) GetIdempotencyKey() string {
@@ -2410,7 +2350,7 @@ type CloseConversationRequest struct {
 
 func (x *CloseConversationRequest) Reset() {
 	*x = CloseConversationRequest{}
-	mi := &file_xiuxian_v1_world_proto_msgTypes[36]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2422,7 +2362,7 @@ func (x *CloseConversationRequest) String() string {
 func (*CloseConversationRequest) ProtoMessage() {}
 
 func (x *CloseConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_xiuxian_v1_world_proto_msgTypes[36]
+	mi := &file_xiuxian_v1_world_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2435,7 +2375,7 @@ func (x *CloseConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseConversationRequest.ProtoReflect.Descriptor instead.
 func (*CloseConversationRequest) Descriptor() ([]byte, []int) {
-	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{36}
+	return file_xiuxian_v1_world_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CloseConversationRequest) GetIdempotencyKey() string {
@@ -2479,9 +2419,11 @@ const file_xiuxian_v1_world_proto_rawDesc = "" +
 	"\fLoginRequest\x12\x18\n" +
 	"\aaccount\x18\x01 \x01(\tR\aaccount\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"\x0f\n" +
-	"\rLogoutRequest\"\x15\n" +
-	"\x13RotateMCPKeyRequest\"\x15\n" +
-	"\x13RevokeMCPKeyRequest\";\n" +
+	"\rLogoutRequest\"?\n" +
+	"\x13RotateMCPKeyRequest\x12(\n" +
+	"\x10expected_role_id\x18\x01 \x01(\tR\x0eexpectedRoleId\"?\n" +
+	"\x13RevokeMCPKeyRequest\x12(\n" +
+	"\x10expected_role_id\x18\x01 \x01(\tR\x0eexpectedRoleId\";\n" +
 	"\fAuthResponse\x12+\n" +
 	"\x05state\x18\x01 \x01(\v2\x15.xiuxian.v1.RoleStateR\x05state\"/\n" +
 	"\x14RotateMCPKeyResponse\x12\x17\n" +
@@ -2589,14 +2531,7 @@ const file_xiuxian_v1_world_proto_rawDesc = "" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12\x1b\n" +
 	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x120\n" +
 	"\x14expected_life_number\x18\x03 \x01(\x03R\x12expectedLifeNumber\x124\n" +
-	"\x16expected_state_version\x18\x04 \x01(\x03R\x14expectedStateVersion\"\x81\x02\n" +
-	"\x12ReincarnateRequest\x12'\n" +
-	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x125\n" +
-	"\bposition\x18\x02 \x01(\v2\x14.xiuxian.v1.PositionH\x00R\bposition\x88\x01\x01\x12\x16\n" +
-	"\x06random\x18\x03 \x01(\bR\x06random\x120\n" +
-	"\x14expected_life_number\x18\x04 \x01(\x03R\x12expectedLifeNumber\x124\n" +
-	"\x16expected_state_version\x18\x05 \x01(\x03R\x14expectedStateVersionB\v\n" +
-	"\t_position\"E\n" +
+	"\x16expected_state_version\x18\x04 \x01(\x03R\x14expectedStateVersion\"E\n" +
 	"\x17ListRecentEventsRequest\x12\x14\n" +
 	"\x05after\x18\x01 \x01(\x03R\x05after\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\xbd\x01\n" +
@@ -2655,7 +2590,7 @@ const file_xiuxian_v1_world_proto_rawDesc = "" +
 	"\fDIRECTION_UP\x10\x01\x12\x12\n" +
 	"\x0eDIRECTION_DOWN\x10\x02\x12\x12\n" +
 	"\x0eDIRECTION_LEFT\x10\x03\x12\x13\n" +
-	"\x0fDIRECTION_RIGHT\x10\x042\xaa\r\n" +
+	"\x0fDIRECTION_RIGHT\x10\x042\xc8\f\n" +
 	"\fWorldService\x12[\n" +
 	"\fGetGameRules\x12\x1f.xiuxian.v1.GetGameRulesRequest\x1a\x15.xiuxian.v1.GameRules\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/game-rules\x12N\n" +
 	"\bGetState\x12\x1b.xiuxian.v1.GetStateRequest\x1a\x15.xiuxian.v1.RoleState\"\x0e\x82\xd3\xe4\x93\x02\b\x12\x06/state\x12c\n" +
@@ -2666,8 +2601,7 @@ const file_xiuxian_v1_world_proto_rawDesc = "" +
 	"\rMoveDirection\x12 .xiuxian.v1.MoveDirectionRequest\x1a\x15.xiuxian.v1.RoleState\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/directional-movements\x12R\n" +
 	"\x04Stop\x12\x17.xiuxian.v1.StopRequest\x1a\x15.xiuxian.v1.RoleState\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/movement-stops\x12w\n" +
 	"\x13TransferCultivation\x12&.xiuxian.v1.TransferCultivationRequest\x1a\x15.xiuxian.v1.RoleState\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/cultivation-transfers\x12p\n" +
-	"\x10SeizeCultivation\x12#.xiuxian.v1.SeizeCultivationRequest\x1a\x15.xiuxian.v1.RoleState\" \x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/cultivation-seizures\x12`\n" +
-	"\vReincarnate\x12\x1e.xiuxian.v1.ReincarnateRequest\x1a\x15.xiuxian.v1.RoleState\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/reincarnations\x12n\n" +
+	"\x10SeizeCultivation\x12#.xiuxian.v1.SeizeCultivationRequest\x1a\x15.xiuxian.v1.RoleState\" \x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/cultivation-seizures\x12n\n" +
 	"\x10ListRecentEvents\x12#.xiuxian.v1.ListRecentEventsRequest\x1a$.xiuxian.v1.ListRecentEventsResponse\"\x0f\x82\xd3\xe4\x93\x02\t\x12\a/events\x12x\n" +
 	"\x11ListConversations\x12$.xiuxian.v1.ListConversationsRequest\x1a%.xiuxian.v1.ListConversationsResponse\"\x16\x82\xd3\xe4\x93\x02\x10\x12\x0e/conversations\x12r\n" +
 	"\x13RequestConversation\x12&.xiuxian.v1.RequestConversationRequest\x1a\x18.xiuxian.v1.Conversation\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/conversations\x12{\n" +
@@ -2696,7 +2630,7 @@ func file_xiuxian_v1_world_proto_rawDescGZIP() []byte {
 }
 
 var file_xiuxian_v1_world_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_xiuxian_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_xiuxian_v1_world_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_xiuxian_v1_world_proto_goTypes = []any{
 	(Direction)(0),                         // 0: xiuxian.v1.Direction
 	(*RegisterRequest)(nil),                // 1: xiuxian.v1.RegisterRequest
@@ -2724,19 +2658,18 @@ var file_xiuxian_v1_world_proto_goTypes = []any{
 	(*StopRequest)(nil),                    // 23: xiuxian.v1.StopRequest
 	(*TransferCultivationRequest)(nil),     // 24: xiuxian.v1.TransferCultivationRequest
 	(*SeizeCultivationRequest)(nil),        // 25: xiuxian.v1.SeizeCultivationRequest
-	(*ReincarnateRequest)(nil),             // 26: xiuxian.v1.ReincarnateRequest
-	(*ListRecentEventsRequest)(nil),        // 27: xiuxian.v1.ListRecentEventsRequest
-	(*WorldEvent)(nil),                     // 28: xiuxian.v1.WorldEvent
-	(*ListRecentEventsResponse)(nil),       // 29: xiuxian.v1.ListRecentEventsResponse
-	(*ListConversationsRequest)(nil),       // 30: xiuxian.v1.ListConversationsRequest
-	(*ConversationMessage)(nil),            // 31: xiuxian.v1.ConversationMessage
-	(*Conversation)(nil),                   // 32: xiuxian.v1.Conversation
-	(*ListConversationsResponse)(nil),      // 33: xiuxian.v1.ListConversationsResponse
-	(*RequestConversationRequest)(nil),     // 34: xiuxian.v1.RequestConversationRequest
-	(*RespondConversationRequest)(nil),     // 35: xiuxian.v1.RespondConversationRequest
-	(*SendConversationMessageRequest)(nil), // 36: xiuxian.v1.SendConversationMessageRequest
-	(*CloseConversationRequest)(nil),       // 37: xiuxian.v1.CloseConversationRequest
-	(*emptypb.Empty)(nil),                  // 38: google.protobuf.Empty
+	(*ListRecentEventsRequest)(nil),        // 26: xiuxian.v1.ListRecentEventsRequest
+	(*WorldEvent)(nil),                     // 27: xiuxian.v1.WorldEvent
+	(*ListRecentEventsResponse)(nil),       // 28: xiuxian.v1.ListRecentEventsResponse
+	(*ListConversationsRequest)(nil),       // 29: xiuxian.v1.ListConversationsRequest
+	(*ConversationMessage)(nil),            // 30: xiuxian.v1.ConversationMessage
+	(*Conversation)(nil),                   // 31: xiuxian.v1.Conversation
+	(*ListConversationsResponse)(nil),      // 32: xiuxian.v1.ListConversationsResponse
+	(*RequestConversationRequest)(nil),     // 33: xiuxian.v1.RequestConversationRequest
+	(*RespondConversationRequest)(nil),     // 34: xiuxian.v1.RespondConversationRequest
+	(*SendConversationMessageRequest)(nil), // 35: xiuxian.v1.SendConversationMessageRequest
+	(*CloseConversationRequest)(nil),       // 36: xiuxian.v1.CloseConversationRequest
+	(*emptypb.Empty)(nil),                  // 37: google.protobuf.Empty
 }
 var file_xiuxian_v1_world_proto_depIdxs = []int32{
 	13, // 0: xiuxian.v1.AuthResponse.state:type_name -> xiuxian.v1.RoleState
@@ -2748,57 +2681,54 @@ var file_xiuxian_v1_world_proto_depIdxs = []int32{
 	19, // 6: xiuxian.v1.ScanResponse.opportunities:type_name -> xiuxian.v1.OpportunitySignal
 	12, // 7: xiuxian.v1.MoveRequest.target:type_name -> xiuxian.v1.Position
 	0,  // 8: xiuxian.v1.MoveDirectionRequest.direction:type_name -> xiuxian.v1.Direction
-	12, // 9: xiuxian.v1.ReincarnateRequest.position:type_name -> xiuxian.v1.Position
-	28, // 10: xiuxian.v1.ListRecentEventsResponse.events:type_name -> xiuxian.v1.WorldEvent
-	31, // 11: xiuxian.v1.Conversation.messages:type_name -> xiuxian.v1.ConversationMessage
-	32, // 12: xiuxian.v1.ListConversationsResponse.conversations:type_name -> xiuxian.v1.Conversation
-	9,  // 13: xiuxian.v1.WorldService.GetGameRules:input_type -> xiuxian.v1.GetGameRulesRequest
-	8,  // 14: xiuxian.v1.WorldService.GetState:input_type -> xiuxian.v1.GetStateRequest
-	10, // 15: xiuxian.v1.WorldService.GetWorldBounds:input_type -> xiuxian.v1.GetWorldBoundsRequest
-	11, // 16: xiuxian.v1.WorldService.Scan:input_type -> xiuxian.v1.ScanRequest
-	21, // 17: xiuxian.v1.WorldService.Move:input_type -> xiuxian.v1.MoveRequest
-	22, // 18: xiuxian.v1.WorldService.MoveDirection:input_type -> xiuxian.v1.MoveDirectionRequest
-	23, // 19: xiuxian.v1.WorldService.Stop:input_type -> xiuxian.v1.StopRequest
-	24, // 20: xiuxian.v1.WorldService.TransferCultivation:input_type -> xiuxian.v1.TransferCultivationRequest
-	25, // 21: xiuxian.v1.WorldService.SeizeCultivation:input_type -> xiuxian.v1.SeizeCultivationRequest
-	26, // 22: xiuxian.v1.WorldService.Reincarnate:input_type -> xiuxian.v1.ReincarnateRequest
-	27, // 23: xiuxian.v1.WorldService.ListRecentEvents:input_type -> xiuxian.v1.ListRecentEventsRequest
-	30, // 24: xiuxian.v1.WorldService.ListConversations:input_type -> xiuxian.v1.ListConversationsRequest
-	34, // 25: xiuxian.v1.WorldService.RequestConversation:input_type -> xiuxian.v1.RequestConversationRequest
-	35, // 26: xiuxian.v1.WorldService.RespondConversation:input_type -> xiuxian.v1.RespondConversationRequest
-	36, // 27: xiuxian.v1.WorldService.SendConversationMessage:input_type -> xiuxian.v1.SendConversationMessageRequest
-	37, // 28: xiuxian.v1.WorldService.CloseConversation:input_type -> xiuxian.v1.CloseConversationRequest
-	1,  // 29: xiuxian.v1.AuthService.Register:input_type -> xiuxian.v1.RegisterRequest
-	2,  // 30: xiuxian.v1.AuthService.Login:input_type -> xiuxian.v1.LoginRequest
-	3,  // 31: xiuxian.v1.AuthService.Logout:input_type -> xiuxian.v1.LogoutRequest
-	4,  // 32: xiuxian.v1.AuthService.RotateMCPKey:input_type -> xiuxian.v1.RotateMCPKeyRequest
-	5,  // 33: xiuxian.v1.AuthService.RevokeMCPKey:input_type -> xiuxian.v1.RevokeMCPKeyRequest
-	16, // 34: xiuxian.v1.WorldService.GetGameRules:output_type -> xiuxian.v1.GameRules
-	13, // 35: xiuxian.v1.WorldService.GetState:output_type -> xiuxian.v1.RoleState
-	17, // 36: xiuxian.v1.WorldService.GetWorldBounds:output_type -> xiuxian.v1.WorldBounds
-	20, // 37: xiuxian.v1.WorldService.Scan:output_type -> xiuxian.v1.ScanResponse
-	13, // 38: xiuxian.v1.WorldService.Move:output_type -> xiuxian.v1.RoleState
-	13, // 39: xiuxian.v1.WorldService.MoveDirection:output_type -> xiuxian.v1.RoleState
-	13, // 40: xiuxian.v1.WorldService.Stop:output_type -> xiuxian.v1.RoleState
-	13, // 41: xiuxian.v1.WorldService.TransferCultivation:output_type -> xiuxian.v1.RoleState
-	13, // 42: xiuxian.v1.WorldService.SeizeCultivation:output_type -> xiuxian.v1.RoleState
-	13, // 43: xiuxian.v1.WorldService.Reincarnate:output_type -> xiuxian.v1.RoleState
-	29, // 44: xiuxian.v1.WorldService.ListRecentEvents:output_type -> xiuxian.v1.ListRecentEventsResponse
-	33, // 45: xiuxian.v1.WorldService.ListConversations:output_type -> xiuxian.v1.ListConversationsResponse
-	32, // 46: xiuxian.v1.WorldService.RequestConversation:output_type -> xiuxian.v1.Conversation
-	32, // 47: xiuxian.v1.WorldService.RespondConversation:output_type -> xiuxian.v1.Conversation
-	31, // 48: xiuxian.v1.WorldService.SendConversationMessage:output_type -> xiuxian.v1.ConversationMessage
-	32, // 49: xiuxian.v1.WorldService.CloseConversation:output_type -> xiuxian.v1.Conversation
-	6,  // 50: xiuxian.v1.AuthService.Register:output_type -> xiuxian.v1.AuthResponse
-	6,  // 51: xiuxian.v1.AuthService.Login:output_type -> xiuxian.v1.AuthResponse
-	38, // 52: xiuxian.v1.AuthService.Logout:output_type -> google.protobuf.Empty
-	7,  // 53: xiuxian.v1.AuthService.RotateMCPKey:output_type -> xiuxian.v1.RotateMCPKeyResponse
-	38, // 54: xiuxian.v1.AuthService.RevokeMCPKey:output_type -> google.protobuf.Empty
-	34, // [34:55] is the sub-list for method output_type
-	13, // [13:34] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	27, // 9: xiuxian.v1.ListRecentEventsResponse.events:type_name -> xiuxian.v1.WorldEvent
+	30, // 10: xiuxian.v1.Conversation.messages:type_name -> xiuxian.v1.ConversationMessage
+	31, // 11: xiuxian.v1.ListConversationsResponse.conversations:type_name -> xiuxian.v1.Conversation
+	9,  // 12: xiuxian.v1.WorldService.GetGameRules:input_type -> xiuxian.v1.GetGameRulesRequest
+	8,  // 13: xiuxian.v1.WorldService.GetState:input_type -> xiuxian.v1.GetStateRequest
+	10, // 14: xiuxian.v1.WorldService.GetWorldBounds:input_type -> xiuxian.v1.GetWorldBoundsRequest
+	11, // 15: xiuxian.v1.WorldService.Scan:input_type -> xiuxian.v1.ScanRequest
+	21, // 16: xiuxian.v1.WorldService.Move:input_type -> xiuxian.v1.MoveRequest
+	22, // 17: xiuxian.v1.WorldService.MoveDirection:input_type -> xiuxian.v1.MoveDirectionRequest
+	23, // 18: xiuxian.v1.WorldService.Stop:input_type -> xiuxian.v1.StopRequest
+	24, // 19: xiuxian.v1.WorldService.TransferCultivation:input_type -> xiuxian.v1.TransferCultivationRequest
+	25, // 20: xiuxian.v1.WorldService.SeizeCultivation:input_type -> xiuxian.v1.SeizeCultivationRequest
+	26, // 21: xiuxian.v1.WorldService.ListRecentEvents:input_type -> xiuxian.v1.ListRecentEventsRequest
+	29, // 22: xiuxian.v1.WorldService.ListConversations:input_type -> xiuxian.v1.ListConversationsRequest
+	33, // 23: xiuxian.v1.WorldService.RequestConversation:input_type -> xiuxian.v1.RequestConversationRequest
+	34, // 24: xiuxian.v1.WorldService.RespondConversation:input_type -> xiuxian.v1.RespondConversationRequest
+	35, // 25: xiuxian.v1.WorldService.SendConversationMessage:input_type -> xiuxian.v1.SendConversationMessageRequest
+	36, // 26: xiuxian.v1.WorldService.CloseConversation:input_type -> xiuxian.v1.CloseConversationRequest
+	1,  // 27: xiuxian.v1.AuthService.Register:input_type -> xiuxian.v1.RegisterRequest
+	2,  // 28: xiuxian.v1.AuthService.Login:input_type -> xiuxian.v1.LoginRequest
+	3,  // 29: xiuxian.v1.AuthService.Logout:input_type -> xiuxian.v1.LogoutRequest
+	4,  // 30: xiuxian.v1.AuthService.RotateMCPKey:input_type -> xiuxian.v1.RotateMCPKeyRequest
+	5,  // 31: xiuxian.v1.AuthService.RevokeMCPKey:input_type -> xiuxian.v1.RevokeMCPKeyRequest
+	16, // 32: xiuxian.v1.WorldService.GetGameRules:output_type -> xiuxian.v1.GameRules
+	13, // 33: xiuxian.v1.WorldService.GetState:output_type -> xiuxian.v1.RoleState
+	17, // 34: xiuxian.v1.WorldService.GetWorldBounds:output_type -> xiuxian.v1.WorldBounds
+	20, // 35: xiuxian.v1.WorldService.Scan:output_type -> xiuxian.v1.ScanResponse
+	13, // 36: xiuxian.v1.WorldService.Move:output_type -> xiuxian.v1.RoleState
+	13, // 37: xiuxian.v1.WorldService.MoveDirection:output_type -> xiuxian.v1.RoleState
+	13, // 38: xiuxian.v1.WorldService.Stop:output_type -> xiuxian.v1.RoleState
+	13, // 39: xiuxian.v1.WorldService.TransferCultivation:output_type -> xiuxian.v1.RoleState
+	13, // 40: xiuxian.v1.WorldService.SeizeCultivation:output_type -> xiuxian.v1.RoleState
+	28, // 41: xiuxian.v1.WorldService.ListRecentEvents:output_type -> xiuxian.v1.ListRecentEventsResponse
+	32, // 42: xiuxian.v1.WorldService.ListConversations:output_type -> xiuxian.v1.ListConversationsResponse
+	31, // 43: xiuxian.v1.WorldService.RequestConversation:output_type -> xiuxian.v1.Conversation
+	31, // 44: xiuxian.v1.WorldService.RespondConversation:output_type -> xiuxian.v1.Conversation
+	30, // 45: xiuxian.v1.WorldService.SendConversationMessage:output_type -> xiuxian.v1.ConversationMessage
+	31, // 46: xiuxian.v1.WorldService.CloseConversation:output_type -> xiuxian.v1.Conversation
+	6,  // 47: xiuxian.v1.AuthService.Register:output_type -> xiuxian.v1.AuthResponse
+	6,  // 48: xiuxian.v1.AuthService.Login:output_type -> xiuxian.v1.AuthResponse
+	37, // 49: xiuxian.v1.AuthService.Logout:output_type -> google.protobuf.Empty
+	7,  // 50: xiuxian.v1.AuthService.RotateMCPKey:output_type -> xiuxian.v1.RotateMCPKeyResponse
+	37, // 51: xiuxian.v1.AuthService.RevokeMCPKey:output_type -> google.protobuf.Empty
+	32, // [32:52] is the sub-list for method output_type
+	12, // [12:32] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_xiuxian_v1_world_proto_init() }
@@ -2807,14 +2737,13 @@ func file_xiuxian_v1_world_proto_init() {
 		return
 	}
 	file_xiuxian_v1_world_proto_msgTypes[17].OneofWrappers = []any{}
-	file_xiuxian_v1_world_proto_msgTypes[25].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_xiuxian_v1_world_proto_rawDesc), len(file_xiuxian_v1_world_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   37,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

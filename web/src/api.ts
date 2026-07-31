@@ -139,22 +139,18 @@ export const api = {
     ...idempotent(), targetId, amountMinutes: String(amountMinutes),
   })))),
   seize: async (targetId: string) => rememberState(contractState(unwrap(await WorldServiceService.worldServiceSeizeCultivation({ ...idempotent(), targetId })))),
-  reincarnate: async (position?: Position) => rememberState(contractState(unwrap(await WorldServiceService.worldServiceReincarnate(position ? {
-    ...idempotent(),
-    position: { xMilliunits: String(Math.round(position.x * 1000)), yMilliunits: String(Math.round(position.y * 1000)) },
-  } : { ...idempotent(), random: true })))),
   events: async () => ({ events: contractEvents(unwrap(await WorldServiceService.worldServiceListRecentEvents(undefined, 100)).events ?? []) }),
   conversations: async () => ({ conversations: (unwrap(await WorldServiceService.worldServiceListConversations()).conversations ?? []).map(contractConversation) }),
   requestConversation: async (targetId: string) => contractConversation(unwrap(await WorldServiceService.worldServiceRequestConversation({ ...idempotent(), targetId }))),
   respondConversation: async (conversationId: string, action: 'accept' | 'reject' | 'ignore') => contractConversation(unwrap(await WorldServiceService.worldServiceRespondConversation({ ...idempotent(), conversationId, action }))),
   sendMessage: async (conversationId: string, content: string) => contractConversationMessage(unwrap(await WorldServiceService.worldServiceSendConversationMessage({ ...idempotent(), conversationId, content }))),
   closeConversation: async (conversationId: string) => contractConversation(unwrap(await WorldServiceService.worldServiceCloseConversation({ ...idempotent(), conversationId }))),
-  rotateMCPKey: async () => {
-    const result = unwrap(await AuthServiceService.authServiceRotateMcpKey({}))
+  rotateMCPKey: async (expectedRoleId: string) => {
+    const result = unwrap(await AuthServiceService.authServiceRotateMcpKey({ expectedRoleId }))
     await api.state()
     return { api_key: result.apiKey ?? '' }
   },
-  revokeMCPKey: async () => { unwrap(await AuthServiceService.authServiceRevokeMcpKey()); await api.state(); return true },
+  revokeMCPKey: async (expectedRoleId: string) => { unwrap(await AuthServiceService.authServiceRevokeMcpKey(expectedRoleId)); await api.state(); return true },
 }
 
 const directionContract = {

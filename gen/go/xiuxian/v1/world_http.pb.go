@@ -28,7 +28,6 @@ const OperationWorldServiceListConversations = "/xiuxian.v1.WorldService/ListCon
 const OperationWorldServiceListRecentEvents = "/xiuxian.v1.WorldService/ListRecentEvents"
 const OperationWorldServiceMove = "/xiuxian.v1.WorldService/Move"
 const OperationWorldServiceMoveDirection = "/xiuxian.v1.WorldService/MoveDirection"
-const OperationWorldServiceReincarnate = "/xiuxian.v1.WorldService/Reincarnate"
 const OperationWorldServiceRequestConversation = "/xiuxian.v1.WorldService/RequestConversation"
 const OperationWorldServiceRespondConversation = "/xiuxian.v1.WorldService/RespondConversation"
 const OperationWorldServiceScan = "/xiuxian.v1.WorldService/Scan"
@@ -46,7 +45,6 @@ type WorldServiceHTTPServer interface {
 	ListRecentEvents(context.Context, *ListRecentEventsRequest) (*ListRecentEventsResponse, error)
 	Move(context.Context, *MoveRequest) (*RoleState, error)
 	MoveDirection(context.Context, *MoveDirectionRequest) (*RoleState, error)
-	Reincarnate(context.Context, *ReincarnateRequest) (*RoleState, error)
 	RequestConversation(context.Context, *RequestConversationRequest) (*Conversation, error)
 	RespondConversation(context.Context, *RespondConversationRequest) (*Conversation, error)
 	Scan(context.Context, *ScanRequest) (*ScanResponse, error)
@@ -67,7 +65,6 @@ func RegisterWorldServiceHTTPServer(s *http.Server, srv WorldServiceHTTPServer) 
 	r.POST("/movement-stops", _WorldService_Stop0_HTTP_Handler(srv))
 	r.POST("/cultivation-transfers", _WorldService_TransferCultivation0_HTTP_Handler(srv))
 	r.POST("/cultivation-seizures", _WorldService_SeizeCultivation0_HTTP_Handler(srv))
-	r.POST("/reincarnations", _WorldService_Reincarnate0_HTTP_Handler(srv))
 	r.GET("/events", _WorldService_ListRecentEvents0_HTTP_Handler(srv))
 	r.GET("/conversations", _WorldService_ListConversations0_HTTP_Handler(srv))
 	r.POST("/conversations", _WorldService_RequestConversation0_HTTP_Handler(srv))
@@ -265,28 +262,6 @@ func _WorldService_SeizeCultivation0_HTTP_Handler(srv WorldServiceHTTPServer) fu
 	}
 }
 
-func _WorldService_Reincarnate0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
-	return func(ctx http.Context) error {
-		var in ReincarnateRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		http.SetOperation(ctx, OperationWorldServiceReincarnate)
-		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.Reincarnate(ctx, req.(*ReincarnateRequest))
-		})
-		out, err := h(ctx, &in)
-		if err != nil {
-			return err
-		}
-		reply := out.(*RoleState)
-		return ctx.Result(200, reply)
-	}
-}
-
 func _WorldService_ListRecentEvents0_HTTP_Handler(srv WorldServiceHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in ListRecentEventsRequest
@@ -422,7 +397,6 @@ type WorldServiceHTTPClient interface {
 	ListRecentEvents(ctx context.Context, req *ListRecentEventsRequest, opts ...http.CallOption) (rsp *ListRecentEventsResponse, err error)
 	Move(ctx context.Context, req *MoveRequest, opts ...http.CallOption) (rsp *RoleState, err error)
 	MoveDirection(ctx context.Context, req *MoveDirectionRequest, opts ...http.CallOption) (rsp *RoleState, err error)
-	Reincarnate(ctx context.Context, req *ReincarnateRequest, opts ...http.CallOption) (rsp *RoleState, err error)
 	RequestConversation(ctx context.Context, req *RequestConversationRequest, opts ...http.CallOption) (rsp *Conversation, err error)
 	RespondConversation(ctx context.Context, req *RespondConversationRequest, opts ...http.CallOption) (rsp *Conversation, err error)
 	Scan(ctx context.Context, req *ScanRequest, opts ...http.CallOption) (rsp *ScanResponse, err error)
@@ -536,19 +510,6 @@ func (c *WorldServiceHTTPClientImpl) MoveDirection(ctx context.Context, in *Move
 	pattern := "/directional-movements"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationWorldServiceMoveDirection))
-	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func (c *WorldServiceHTTPClientImpl) Reincarnate(ctx context.Context, in *ReincarnateRequest, opts ...http.CallOption) (*RoleState, error) {
-	var out RoleState
-	pattern := "/reincarnations"
-	path := binding.EncodeURL(pattern, in, false)
-	opts = append(opts, http.Operation(OperationWorldServiceReincarnate))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

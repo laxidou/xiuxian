@@ -1,7 +1,7 @@
 // Command-path preservation property test (Task 2 of web-stale-derived-state).
 //
 // Req 3.1 (Regression Prevention): every command (move, moveDirection, stop,
-// transfer, seize, reincarnate, scan, and the conversation actions) MUST send
+// transfer, seize, scan, and the conversation actions) MUST send
 // the authoritative `state_version` / `life_number` captured from the last
 // server-delivered state (`rememberState` in api.ts). Locally interpolated
 // values must NEVER be used as command input.
@@ -24,7 +24,6 @@ const world = vi.hoisted(() => ({
   worldServiceScan: vi.fn(async () => ({})),
   worldServiceTransferCultivation: vi.fn(async () => ({})),
   worldServiceSeizeCultivation: vi.fn(async () => ({})),
-  worldServiceReincarnate: vi.fn(async () => ({})),
   worldServiceRequestConversation: vi.fn(async () => ({})),
   worldServiceRespondConversation: vi.fn(async () => ({})),
   worldServiceSendConversationMessage: vi.fn(async () => ({})),
@@ -80,7 +79,6 @@ beforeEach(() => {
   world.worldServiceScan.mockResolvedValue({})
   world.worldServiceTransferCultivation.mockResolvedValue({})
   world.worldServiceSeizeCultivation.mockResolvedValue({})
-  world.worldServiceReincarnate.mockResolvedValue({})
   world.worldServiceRequestConversation.mockResolvedValue({})
   world.worldServiceRespondConversation.mockResolvedValue({})
   world.worldServiceSendConversationMessage.mockResolvedValue({})
@@ -100,7 +98,6 @@ const commands: Array<{
   { name: 'scan', invoke: () => api.scan(), fn: () => world.worldServiceScan, idempotent: false },
   { name: 'transfer', invoke: () => api.transfer('other', 3), fn: () => world.worldServiceTransferCultivation, idempotent: true },
   { name: 'seize', invoke: () => api.seize('other'), fn: () => world.worldServiceSeizeCultivation, idempotent: true },
-  { name: 'reincarnate', invoke: () => api.reincarnate(), fn: () => world.worldServiceReincarnate, idempotent: true },
   { name: 'requestConversation', invoke: () => api.requestConversation('other'), fn: () => world.worldServiceRequestConversation, idempotent: true },
   { name: 'respondConversation', invoke: () => api.respondConversation('conv-1', 'accept'), fn: () => world.worldServiceRespondConversation, idempotent: true },
   { name: 'sendMessage', invoke: () => api.sendMessage('conv-1', '你好'), fn: () => world.worldServiceSendConversationMessage, idempotent: true },

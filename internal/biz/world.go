@@ -43,7 +43,6 @@ type WorldAuthority interface {
 	Conversations(context.Context, string) ([]Conversation, error)
 	Events(context.Context, string, int64, int) ([]Event, error)
 	Bounds(context.Context) (Bounds, error)
-	Reincarnate(context.Context, string, string, *rules.Position, CommandExpectation) (State, error)
 }
 
 type repositoryWithoutAuthorityTime struct {
@@ -238,13 +237,6 @@ func (uc *WorldUsecase) Bounds(ctx context.Context) (Bounds, error) {
 		return Bounds{}, err
 	}
 	return uc.authority.Bounds(ctx)
-}
-
-func (uc *WorldUsecase) Reincarnate(ctx context.Context, roleID, idempotencyKey string, position *rules.Position, expectation CommandExpectation) (State, error) {
-	if err := ctx.Err(); err != nil {
-		return State{}, err
-	}
-	return uc.authority.Reincarnate(ctx, roleID, idempotencyKey, position, expectation)
 }
 
 func (uc *WorldUsecase) logFailure(ctx context.Context, operation string, err error) {
